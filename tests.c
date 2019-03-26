@@ -31,10 +31,18 @@ int main (int argc, char **argv)
     pool.min_bin_size = (sizeof(struct test_structure_t) + sizeof(struct on_destroy_callback_info_t))*2;
 
     push_test_struct (&pool, 10, 5.5);
+
+    printf ("----TEMPORARY MEMORY START----\n");
+    mem_pool_temp_marker_t mrkr = mem_pool_begin_temporary_memory (&pool);
     push_test_struct (&pool, 4, 1.5);
     push_test_struct (&pool, 20, 3.25);
+    mem_pool_print (&pool);
+    printf ("\n");
+    mem_pool_end_temporary_memory (mrkr);
+    printf ("----TEMPORARY MEMORY END----\n");
 
     mem_pool_print (&pool);
+    printf ("\n");
 
     mem_pool_destroy (&pool);
     

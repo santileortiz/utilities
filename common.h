@@ -2000,6 +2000,11 @@ void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
             cb_info = cb_info->prev;
         }
 
+        // Update last_cb_info in the bin_info of the last bin. This bin will
+        // not be freed, future allocations will overwrite the end of it if
+        // there's enough space.
+        curr_info->last_cb_info = cb_info;
+
         // Free necessary bins
         curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
         while (curr_info->base != mrkr.base) {
