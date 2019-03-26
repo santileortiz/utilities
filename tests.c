@@ -28,9 +28,13 @@ int main (int argc, char **argv)
     // Testing memory pools in a bootstrapped struct
     mem_pool_t pool = {0};
 
+    pool.min_bin_size = (sizeof(struct test_structure_t) + sizeof(struct on_destroy_callback_info_t))*2;
+
     push_test_struct (&pool, 10, 5.5);
     push_test_struct (&pool, 4, 1.5);
     push_test_struct (&pool, 20, 3.25);
+
+    mem_pool_print (&pool);
 
     mem_pool_destroy (&pool);
     
