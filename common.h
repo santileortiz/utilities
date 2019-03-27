@@ -1770,9 +1770,7 @@ typedef struct {
 // most sensible thing to do, but there may be cases where it isn't, maybe it
 // could increase cache misses? I don't know.
 //
-// TODO: Which other arguments would be useful for this? maybe add a closure?,
-// take into account that currently this signature is the same as for
-// str_free() avoiding a wrapper for it.
+// TODO: Which other arguments would be useful for this? maybe add a closure?.
 #define ON_DESTROY_CALLBACK(name) void name(void *allocated)
 typedef ON_DESTROY_CALLBACK(mem_pool_on_destroy_callback_t);
 
@@ -2075,6 +2073,23 @@ char* pprintf (mem_pool_t *pool, const char *format, ...)
     vsnprintf (str, size, format, args2);
     va_end (args2);
 
+    return str;
+}
+
+// These functions implement pooled string_t structures. This means strings
+// created using strn_new_pooled() will be automatically freed when the passed
+// pool gets destroyed.
+ON_DESTROY_CALLBACK (destroy_pooled_str)
+{
+    string_t *str = (string_t*)allocated;
+    str_free (str);
+}
+#define str_new_pooled(data) strn_new_pooled((data),((data)!=NULL?strlen(data):0))
+string_t* strn_new_pooled (mem_pool_t *pool, const char *c_str, size_t len)
+{
+    string_t *str = mem_pool_push_size_cb (pool, sizeof(string_t), destroy_pooled_str);
+    *str = ZERO_INIT (string_t);
+    strn_set (str, c_str, len);
     return str;
 }
 
