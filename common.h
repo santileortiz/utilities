@@ -2084,7 +2084,7 @@ ON_DESTROY_CALLBACK (destroy_pooled_str)
     string_t *str = (string_t*)allocated;
     str_free (str);
 }
-#define str_new_pooled(data) strn_new_pooled((data),((data)!=NULL?strlen(data):0))
+#define str_new_pooled(pool,data) strn_new_pooled((pool),(data),((data)!=NULL?strlen(data):0))
 string_t* strn_new_pooled (mem_pool_t *pool, const char *c_str, size_t len)
 {
     string_t *str = mem_pool_push_size_cb (pool, sizeof(string_t), destroy_pooled_str);
