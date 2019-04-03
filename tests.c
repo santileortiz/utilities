@@ -47,6 +47,14 @@ int main (int argc, char **argv)
     printf ("\n");
 
     mem_pool_destroy (&pool);
+
+    // Quick test for string functions with the printf syntax
+    string_t str = {0};
+    str_set_printf (&str, "%d, and '%s', plus %c", 120, "FOO", 'o');
+    str_cat_printf (&str, ", some appended text %d", 44);
+    printf ("%s\n", str_data(&str));
+    str_free (&str);
+
     
     return 0;
 }
