@@ -1802,13 +1802,19 @@ typedef struct {
 // most sensible thing to do, but there may be cases where it isn't, maybe it
 // could increase cache misses? I don't know.
 //
-// TODO: Which other arguments would be useful for this? maybe add a closure?.
-#define ON_DESTROY_CALLBACK(name) void name(void *allocated)
+#define ON_DESTROY_CALLBACK(name) void name(void *allocated, void *clsr)
 typedef ON_DESTROY_CALLBACK(mem_pool_on_destroy_callback_t);
 
+// TODO: As of now I've required the allocated pointer and the clsr pointer, but
+// I've never required them both at the same time. Maybe 2 pointers here is too
+// much overhead for allocating callbacks?, only time will tell... If it turns
+// out it's too much then we will need to think better about it. It's a tradeoff
+// between flexibility of the API and space overhead in the pool. For now, we
+// choose more flexibility at the cost of space overhead in the pool.
 struct on_destroy_callback_info_t {
     mem_pool_on_destroy_callback_t *cb;
     void *allocated;
+    void *clsr;
 
     struct on_destroy_callback_info_t *prev;
 };
@@ -1828,19 +1834,40 @@ enum alloc_opts {
     POOL_ZERO_INIT
 };
 
-#define mem_pool_push_size_cb(pool, size, cb) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED, cb)
-#define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED, NULL)
+
+// TODO: We should make this API more "generic" in the sense that any of the
+// push modes (size,struct,array) should be able to receive either the options
+// enum or a callback, with or without closure. Maybe create macros for all
+// these configuration combinations that evaluate to a 'config' struct, then
+// make a *_full version of these that receives this struct as the last
+// parameter.
+//
+// The reasoning behind this is that we don't want users to be bothered with
+// filling all 3 arguments for the current _full version, when they may only
+// want one of those. Right now I've seen myself prefering a mem_pool_push_* call
+// followed by a ZERO_INIT just because using the options will force me to write
+// explicitly the allocation using the 'push_size' variation, and remember de
+// order of the last arguments in the _full version of it. Making all options a
+// single argument at the end simplifies memorizing the API a LOT.
+//
+// This is something that would be much much nicer if C had default values for
+// function arguments.
+#define mem_pool_push_cb(pool,cb,clsr) mem_pool_push_size_full(pool, 0, POOL_UNINITIALIZED, cb, clsr)
+
+#define mem_pool_push_size_cb(pool, size, cb) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED, cb, NULL)
+#define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED, NULL, NULL)
 #define mem_pool_push_struct(pool, type) ((type*)mem_pool_push_size(pool, sizeof(type)))
 #define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
 void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts opts,
-                               mem_pool_on_destroy_callback_t *cb)
+                               mem_pool_on_destroy_callback_t *cb, void *clsr)
 {
     assert (pool != NULL);
-    if (size == 0) return NULL;
 
     if (cb != NULL) {
         size += sizeof (struct on_destroy_callback_info_t);
     }
+
+    if (size == 0) return NULL;
 
     if (pool->used + size > pool->size) {
         pool->num_bins++;
@@ -1883,6 +1910,7 @@ void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts 
         struct on_destroy_callback_info_t *cb_info =
             (struct on_destroy_callback_info_t*)(pool->base + pool->used - sizeof(struct on_destroy_callback_info_t));
         cb_info->allocated = ret;
+        cb_info->clsr = clsr;
         cb_info->cb = cb;
 
         bin_info_t *bin_info = pool->base + pool->size;
@@ -1908,7 +1936,7 @@ void mem_pool_destroy (mem_pool_t *pool)
         while (curr_info != NULL) {
             struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
             while (cb_info != NULL) {
-                cb_info->cb(cb_info->allocated);
+                cb_info->cb(cb_info->allocated, cb_info->clsr);
                 cb_info = cb_info->prev;
             }
 
@@ -2016,7 +2044,7 @@ void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
         while (curr_info->base != mrkr.base) {
             struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
             while (cb_info != NULL) {
-                cb_info->cb(cb_info->allocated);
+                cb_info->cb(cb_info->allocated, cb_info->clsr);
                 cb_info = cb_info->prev;
             }
 
@@ -2026,7 +2054,7 @@ void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
         // Call affected on_destroy callbacks in the last bin
         struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
         while (cb_info != NULL && cb_info->allocated >= mrkr.base + mrkr.used) {
-            cb_info->cb(cb_info->allocated);
+            cb_info->cb(cb_info->allocated, cb_info->clsr);
             cb_info = cb_info->prev;
         }
 
@@ -2107,7 +2135,12 @@ char* pprintf (mem_pool_t *pool, const char *format, ...)
 // pool gets destroyed.
 ON_DESTROY_CALLBACK (destroy_pooled_str)
 {
-    string_t *str = (string_t*)allocated;
+    string_t *str;
+    if (clsr != NULL) {
+       str = (string_t*)clsr;
+    } else {
+       str = (string_t*)allocated;
+    }
     str_free (str);
 }
 #define str_new_pooled(pool,data) strn_new_pooled((pool),(data),((data)!=NULL?strlen(data):0))
@@ -2117,6 +2150,14 @@ string_t* strn_new_pooled (mem_pool_t *pool, const char *c_str, size_t len)
     *str = ZERO_INIT (string_t);
     strn_set (str, c_str, len);
     return str;
+}
+
+#define str_set_pooled(pool,str,data) strn_set_pooled((pool),(str),(data),((data)!=NULL?strlen(data):0))
+void strn_set_pooled (mem_pool_t *pool, string_t *str, const char *c_str, size_t len)
+{
+    mem_pool_push_cb (pool, destroy_pooled_str, str);
+    *str = ZERO_INIT (string_t);
+    strn_set (str, c_str, len);
 }
 
 // Flatten an array of null terminated strings into a single string allocated

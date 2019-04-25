@@ -10,7 +10,7 @@ struct test_structure_t {
     string_t *str;
 };
 
-void print_total (void *allocated)
+ON_DESTROY_CALLBACK(print_total)
 {
     struct test_structure_t *test = (struct test_structure_t*)allocated;
     printf ("%f\n", test->i + test->f);
