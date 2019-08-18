@@ -1787,6 +1787,9 @@ typedef struct {
     uint32_t used;
     void *base;
 
+    // total_data is the total used memory minus the memory used for
+    // on_destroy_callback_info_t structs. We use this variable to compute the
+    // ammount of empty space left in previous bins.
     uint32_t total_data;
     uint32_t num_bins;
 } mem_pool_t;
@@ -1802,6 +1805,13 @@ typedef struct {
 // most sensible thing to do, but there may be cases where it isn't, maybe it
 // could increase cache misses? I don't know.
 //
+// NOTE: I reluctantly added closures to ON_DESTROY_CALLBACK. For
+// str_init_pooled() we need a way to pass the string to be freed. Heavy use of
+// closures here is a slippery slope. Expecting to be able to run any code from
+// here will be problematic and closures may gieve the wrong impression that
+// code here is always safe. It's easy to use freed memory from here. Whenever
+// you use these callbacks think carefully! this mechanism should be rareley be
+// used.
 #define ON_DESTROY_CALLBACK(name) void name(void *allocated, void *clsr)
 typedef ON_DESTROY_CALLBACK(mem_pool_on_destroy_callback_t);
 
@@ -1829,11 +1839,11 @@ struct _bin_info_t {
 
 typedef struct _bin_info_t bin_info_t;
 
+// TODO: I hardly ever use these, instead I use ZERO_INIT, remove them?
 enum alloc_opts {
     POOL_UNINITIALIZED,
     POOL_ZERO_INIT
 };
-
 
 // TODO: We should make this API more "generic" in the sense that any of the
 // push modes (size,struct,array) should be able to receive either the options
@@ -1852,31 +1862,31 @@ enum alloc_opts {
 //
 // This is something that would be much much nicer if C had default values for
 // function arguments.
-#define mem_pool_push_cb(pool,cb,clsr) mem_pool_push_size_full(pool, 0, POOL_UNINITIALIZED, cb, clsr)
+#define mem_pool_push_cb(pool,cb,clsr) mem_pool_push_size_full(pool,0,POOL_UNINITIALIZED,cb,clsr)
 
-#define mem_pool_push_size_cb(pool, size, cb) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED, cb, NULL)
-#define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED, NULL, NULL)
-#define mem_pool_push_struct(pool, type) ((type*)mem_pool_push_size(pool, sizeof(type)))
-#define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
+#define mem_pool_push_size_cb(pool,size,cb) mem_pool_push_size_full(pool,size,POOL_UNINITIALIZED,cb,NULL)
+#define mem_pool_push_size(pool,size) mem_pool_push_size_full(pool,size,POOL_UNINITIALIZED,NULL,NULL)
+#define mem_pool_push_struct(pool,type) ((type*)mem_pool_push_size(pool,sizeof(type)))
+#define mem_pool_push_array(pool,n,type) mem_pool_push_size(pool,(n)*sizeof(type))
 void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts opts,
                                mem_pool_on_destroy_callback_t *cb, void *clsr)
 {
     assert (pool != NULL);
 
-    if (cb != NULL) {
-        size += sizeof (struct on_destroy_callback_info_t);
-    }
+    uint32_t required_size = cb == NULL ? size : size + sizeof(struct on_destroy_callback_info_t);
 
-    if (size == 0) return NULL;
+    if (required_size == 0) return NULL;
 
-    if (pool->used + size > pool->size) {
+    // If not enough space left in the current bin, grow the pool by adding a
+    // new one.
+    if (pool->used + required_size > pool->size) {
         pool->num_bins++;
 
         if (pool->min_bin_size == 0) {
             pool->min_bin_size = MEM_POOL_DEFAULT_MIN_BIN_SIZE;
         }
 
-        int new_bin_size = MAX(pool->min_bin_size, size);
+        int new_bin_size = MAX(pool->min_bin_size, required_size);
         void *new_bin;
         bin_info_t *new_info;
         if ((new_bin = malloc (new_bin_size + sizeof(bin_info_t)))) {
@@ -1903,13 +1913,10 @@ void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts 
     }
 
     void *ret = (uint8_t*)pool->base + pool->used;
-    pool->used += size;
-    pool->total_data += cb == NULL ? size : size - sizeof (struct on_destroy_callback_info_t);
-
     if (cb != NULL) {
         struct on_destroy_callback_info_t *cb_info =
-            (struct on_destroy_callback_info_t*)(pool->base + pool->used - sizeof(struct on_destroy_callback_info_t));
-        cb_info->allocated = ret;
+            (struct on_destroy_callback_info_t*)(pool->base + pool->used + size);
+        cb_info->allocated = size > 0 ? ret : NULL;
         cb_info->clsr = clsr;
         cb_info->cb = cb;
 
@@ -1917,6 +1924,9 @@ void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts 
         cb_info->prev = bin_info->last_cb_info;
         bin_info->last_cb_info = cb_info;
     }
+
+    pool->used += required_size;
+    pool->total_data += size;
 
     if (opts == POOL_ZERO_INIT) {
         memset (ret, 0, size);
@@ -1996,22 +2006,26 @@ void mem_pool_print (mem_pool_t *pool)
 {
     uint32_t allocated = mem_pool_allocated(pool);
     printf ("Allocated: %u bytes\n", allocated);
+
     uint32_t available = pool->size-pool->used;
     printf ("Available: %u bytes (%.2f%%)\n", available, ((double)available*100)/allocated);
+
     printf ("Data: %u bytes (%.2f%%)\n", pool->total_data, ((double)pool->total_data*100)/allocated);
-    uint64_t info_size = pool->num_bins*sizeof(bin_info_t);
-    printf ("Info: %lu bytes (%.2f%%)\n", info_size, ((double)info_size*100)/allocated);
+
     uint32_t callback_info_size = mem_pool_callback_info (pool);
     printf ("Callback Info: %u bytes (%.2f%%)\n", callback_info_size, ((double)callback_info_size*100)/allocated);
+
+    uint64_t info_size = pool->num_bins*sizeof(bin_info_t);
+    printf ("Info: %lu bytes (%.2f%%)\n", info_size, ((double)info_size*100)/allocated);
 
     // NOTE: This is the amount of space left empty in previous bins. It's
     // different from 'available' space in that 'left_empty' space is
     // effectively wasted and won't be used in future allocations.
     uint64_t left_empty;
     if (pool->num_bins>0)
-        left_empty = (allocated - pool->size - sizeof(bin_info_t)) -        /*allocated except last bin*/
-                     (pool->total_data + callback_info_size - pool->used) - /*total_data except last bin*/
-                     (pool->num_bins-1)*sizeof(bin_info_t);                 /*size used in bin_info_t*/
+        left_empty = (allocated - pool->size - sizeof(bin_info_t))          /*allocated except last bin*/
+                     - (pool->total_data + callback_info_size - pool->used) /*total_data except last bin*/
+                     - (pool->num_bins-1)*sizeof(bin_info_t);               /*size used in bin_info_t*/
     else {
         left_empty = 0;
     }
@@ -2039,8 +2053,9 @@ mem_pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
 void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
 {
     if (mrkr.base != NULL) {
+        // Call all on_destroy callbacks for bins that will be freed, starting
+        // from the last bin.
         bin_info_t *curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
-        // Call all on_destroy callbacks for bins that will be freed
         while (curr_info->base != mrkr.base) {
             struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
             while (cb_info != NULL) {
@@ -2051,9 +2066,10 @@ void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
             curr_info = curr_info->prev_bin_info;
         }
 
-        // Call affected on_destroy callbacks in the last bin
+        // Call affected on_destroy callbacks in the new last bin (the one that
+        // will stay allocated but may be partially freed).
         struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
-        while (cb_info != NULL && cb_info->allocated >= mrkr.base + mrkr.used) {
+        while (cb_info != NULL && (void*)cb_info >= mrkr.base + mrkr.used) {
             cb_info->cb(cb_info->allocated, cb_info->clsr);
             cb_info = cb_info->prev;
         }
@@ -2137,26 +2153,31 @@ ON_DESTROY_CALLBACK (destroy_pooled_str)
 {
     string_t *str;
     if (clsr != NULL) {
-       str = (string_t*)clsr;
+        assert (allocated == NULL);
+        str = (string_t*)clsr;
     } else {
-       str = (string_t*)allocated;
+        str = (string_t*)allocated;
     }
+
+    //printf ("Deleted pooled string: '%s'\n", str_data(str));
     str_free (str);
 }
-#define str_new_pooled(pool,data) strn_new_pooled((pool),(data),((data)!=NULL?strlen(data):0))
+#define str_new_pooled(pool,c_str) strn_new_pooled((pool),(c_str),((c_str)!=NULL?strlen(c_str):0))
 string_t* strn_new_pooled (mem_pool_t *pool, const char *c_str, size_t len)
 {
+    assert (pool != NULL && c_str != NULL);
     string_t *str = mem_pool_push_size_cb (pool, sizeof(string_t), destroy_pooled_str);
     *str = ZERO_INIT (string_t);
     strn_set (str, c_str, len);
     return str;
 }
 
-#define str_set_pooled(pool,str,data) strn_set_pooled((pool),(str),(data),((data)!=NULL?strlen(data):0))
+#define str_set_pooled(pool,str,c_str) strn_set_pooled((pool),(str),(c_str),((c_str)!=NULL?strlen(c_str):0))
 void strn_set_pooled (mem_pool_t *pool, string_t *str, const char *c_str, size_t len)
 {
-    mem_pool_push_cb (pool, destroy_pooled_str, str);
+    assert (pool != NULL && str != NULL);
     *str = ZERO_INIT (string_t);
+    mem_pool_push_cb (pool, destroy_pooled_str, str);
     strn_set (str, c_str, len);
 }
 
