@@ -27,6 +27,7 @@ void push_test_struct (mem_pool_t *pool, int i, float f, char *str)
 {
     struct test_structure_t *test_struct = 
         (struct test_structure_t*) mem_pool_push_size_cb(pool, sizeof(struct test_structure_t), print_total);
+    test_struct->str_set = str_new ("");
     test_struct->i = i;
     test_struct->f = f;
 
