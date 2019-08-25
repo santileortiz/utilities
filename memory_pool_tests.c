@@ -77,7 +77,6 @@ void memory_pool_tests ()
     printf ("----TEMPORARY MEMORY END----\n");
 
     mem_pool_print (&pool);
-    printf ("\n");
 
     mem_pool_destroy (&pool);
 }
