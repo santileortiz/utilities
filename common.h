@@ -22,8 +22,7 @@
 #define ZERO_INIT(type) (type){}
 // TODO: Add the static assert and check it works in C++.
 #else
-#define ZERO_INIT(type) (type){0}; \
-{_Static_assert(strcmp(#type, "string_t") != 0, "Clearing string_t is forbidden. Use str_new() or str_set().");}
+#define ZERO_INIT(type) (type){0}
 typedef enum {false, true} bool;
 #endif
 
