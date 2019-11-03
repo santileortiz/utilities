@@ -2323,6 +2323,10 @@ char* abs_path (const char *path, mem_pool_t *pool)
     char *expanded_path = sh_expand (path, &l_pool);
 
     char *absolute_path_m = realpath (expanded_path, NULL);
+    if (absolute_path_m == NULL) {
+        // NOTE: realpath() fails if the file does not exist.
+        printf ("Error: %s (%d)\n", strerror(errno), errno);
+    }
     char *absolute_path = pom_strdup (pool, absolute_path_m);
     free (absolute_path_m);
 
