@@ -94,7 +94,7 @@ def handle_tab_complete ():
 
     # Check that the tab completion script is installed
     if not check_completions ():
-        if get_cli_option('--install_completions'):
+        if get_cli_bool_opt('--install_completions'):
             print ('Installing tab completions...')
             ex ("cp mkpy/pymk.py /usr/share/bash-completion/completions/")
             exit ()
@@ -105,9 +105,9 @@ def handle_tab_complete ():
 
     # Add the builtin tab completions the user wants
     if len(builtin_completions) > 0:
-        [get_cli_option (c) for c in builtin_completions]
+        [get_cli_bool_opt (c) for c in builtin_completions]
 
-    data_str = get_cli_option('--get_completions', unique_option=True, has_argument=True)
+    data_str = get_cli_arg_opt('--get_completions', unique_option=True)
     if data_str != None:
         data_lst = data_str.split(' ')
         curs_pos = int(data_lst[0])
@@ -132,21 +132,17 @@ def handle_tab_complete ():
                 print (' '.join(def_opts))
         exit ()
 
-def get_cli_option (opts, values=None, has_argument=False, unique_option=False):
+def get_cli_arg_opt (opts, values=None, unique_option=False):
     """
-    Parses sys.argv looking for option _opt_.
+    Parses sys.argv looking for option _opt_ and expects an argument after it.
 
-    If _opt_ is not found, returns None.
-    If _opt_ does not have arguments, returns True if the option is found.
-    If _opt_ has an argument, returns the value of the argument. In this case
-    additional error checking is available if _values_ is set to a list of the
-    possible values the argument could take.
-
-    NOTE: We don't detect if there is an argument, the caller must tell if it
-    expects an argument or not by using has_argument.
+    If _opt_ is found and it has an argument after it, it returns the value of
+    the argument as a string.
+    If _values_ is set, we check that the argument is present in the list.
+    If _opt_ is not found, there is no argument or _values_ is provided and the
+    argument doesn't match, it returns None.
 
     When unique_option is True then _opt_ must be the only option used.
-
     """
     global cli_completions
 
@@ -155,31 +151,56 @@ def get_cli_option (opts, values=None, has_argument=False, unique_option=False):
     if values != None: has_argument = True
     cli_completions[opts] = values
 
+    # TODO: Right now a missing argument is only detected if _opt_ is the last
+    # value of argv. Something like ./pymk.py --opt1 --opt2 will return
+    # '--opt2' as argument of --opt1. How bad is this?
     while i<len(sys.argv):
         if sys.argv[i] in opts.split(','):
-            if has_argument:
-                if i+1 >= len(sys.argv):
-                    print ('Missing argument for option '+opt+'.');
-                    if values != None:
-                        print ('Possible values are [ '+' | '.join(values)+' ].')
-                    return
-                else:
-                    res = sys.argv[i+1]
-                    break
+            if i+1 >= len(sys.argv):
+                print ('Missing argument for option '+opt+'.');
+                if values != None:
+                    print ('Possible values are [ '+' | '.join(values)+' ].')
+                return
             else:
-                res = True
+                res = sys.argv[i+1]
+                break
         i = i+1
 
     if unique_option and res != None:
-        if (has_argument and len(sys.argv) != 3) or  (not has_argument and len(sys.argv) != 2):
+        if len(sys.argv) != 3:
             print ('Option '+opt+' receives no other option.')
             return
 
     if values != None and res != None:
         if res not in values:
             print ('Argument '+res+' is not valid for option '+opt+',')
-            print ('Possible values are: [ '+' | '.join(values)+' ].')
+            if values != None:
+                print ('Possible values are: [ '+' | '.join(values)+' ].')
             return
+    return res
+
+def get_cli_bool_opt(opts, has_argument=False, unique_option=False):
+    """
+    Parses sys.argv looking for option _opt_.
+
+    If _opt_ is found, returns True, otherwise it returns False.
+
+    When unique_option is True then _opt_ must be the only option used.
+    """
+    global cli_completions
+
+    res = None
+    i = 1
+    while i<len(sys.argv):
+        if sys.argv[i] in opts.split(','):
+            res = True
+        i = i+1
+
+    if unique_option and res != None:
+        if len(sys.argv) != 2:
+            print ('Option '+opt+' receives no other option.')
+            return
+
     return res
 
 def get_cli_rest ():
@@ -221,11 +242,46 @@ def pkg_config_includes (packages):
 
 ex_cmds = []
 g_dry_run = False
+g_echo_mode = False
 
+# TODO: Is this useful? maybe just ask the user to set the global variable
+# :global_variable_setters
 def set_dry_run():
     global g_dry_run
     g_dry_run = True
 
+# :global_variable_setters
+def set_echo_mode():
+    global g_echo_mode
+    g_echo_mode = True
+
+# TODO: ex_escape() seems very useless. I never remember it exists, it's
+# tedious to wrap the content of an ex command with it and if we have variables
+# we actually want to replace this will escape them too. The use case for this
+# is that if the command uses { and } a lot we don't want to have to replace
+# each occurence with {{ and }}, as this makes it complicated to take the
+# string and run it in it's normal context. A better approach is to have ex
+# receive an argument that defines how to identify variables maybe something
+# like
+#
+#   ex ("""awk 'BEGIN {print "A %{REPLACE_VAR}%"} {print $0} file""", escs='%{', esce='}%')
+#
+# or
+#
+#   ex ("""awk 'BEGIN {print "A %{REPLACE_VAR}%"} {print $0} file""", esc='%')
+#
+# This would escape all occurences of { and }, and replace %{ and }% for { and
+# } respectiveley. I'm leaning towards the 2nd option because it's more concise
+# and easy to remember. Note that I use %{ }% not %{ %} like the \ character
+# works in C strings, the reason for this is that we can still grep for
+# {REPLACE_VAR} and find where the variable is being used.
+#
+# Also, the new echo mode allows getting the resolved commands without running
+# them. Maybe this makes it not that bad to replace all {{ and }}?. The thing
+# is I normally develop the awk script in the console, then copy paste it to a
+# pymk script, I expect to add variables not have to replace each { and }. This
+# also applies for C code that may be present in a command. Let's wait and see
+# if I see cases where I need it.
 def ex_escape (s):
     return s.replace ('\n', '').replace ('{', '{{').replace ('}','}}')
 
@@ -234,6 +290,7 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
     # variable. If this is the case, escape the content that has braces using
     # the ex_escape() function. This is required for things like awk scripts.
     global g_dry_run
+    global g_echo_mode
 
     resolved_cmd = cmd.format(**get_user_str_vars())
 
@@ -241,7 +298,10 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
     if g_dry_run:
         return
 
-    if echo: print (resolved_cmd)
+    if echo or g_echo_mode: print (resolved_cmd)
+
+    if g_echo_mode:
+        return
 
     if not ret_stdout:
         redirect = open(os.devnull, 'wb') if no_stdout else None
@@ -369,6 +429,14 @@ def pers_func (name, func, arg):
     """
     return pers_func_f (name, func, [arg])
 
+def path_exists (path_s):
+    """
+    Convenience function that checks the existance of a file or directory. It
+    supports context variable substitutions.
+    """
+    resolved_path = path_s.format(**get_user_str_vars())
+    return pathlib.Path(resolved_path).exists()
+
 # This could also be accomplished by:
 #   ex ('mkdir -p {path_s}')
 # Maybe remove this function and use that instead, although it won't work on Windows
@@ -377,11 +445,57 @@ def ensure_dir (path_s):
     if g_dry_run:
         return
 
-    resolved_path = path_s.format(**get_user_str_vars())
-
-    path = pathlib.Path(resolved_path)
-    if not path.exists():
+    if not path_exists(path_s):
         os.makedirs (resolved_path)
+
+def needs_target (recipe):
+    """
+    This function takes a tuple of 2 strings representing paths, the first one
+    we call source and the second one target. Each tuple represents a
+    dependency between the source and target files. This function returns true
+    whenever the target file needs to be regenerated, either because it does
+    not exist or because source is more recent than target.
+
+    The aim of this function is to implement similar functionality than the one
+    provided by Make's recipes.
+    """
+    # TODO: Support target using common file transfer protocols like rsync, ftp
+    # and SSH. How would we support authentication?.
+
+    # TODO: Do we want to allow multiple source files?, Makefiles allow
+    # multiple 'prerequisites'. My thoughts now are that this could lead users
+    # in a slippery slope to have overly complicated build scripts. Not
+    # supporting this is a way to make them rethink their architecture, maybe
+    # use unity builds?. Anyway, it may be necessary in some cases so it's
+    # useful to keep in mind, but it won't be implemented for now.
+    #
+    # If we were to implement it, the way to go would be to have all leading
+    # elements od the tuple be the prerequisites and make the last one be the
+    # target. This way it's easy to add more prerequisites and the user doesn't
+    # need to change much.
+
+    src = recipe[0]
+    tgt = recipe[1]
+
+    if not path_exists (tgt):
+        return True
+    else:
+        if (file_time(src) > file_time(tgt)):
+            return True
+        else:
+            return False
+
+def needs_targets (recipes):
+    """
+    This function takes a list of tuples and calls needs_target() on them.
+    Returns True if any of these calls returns True and False otherwise (all
+    calls returned False).
+    """
+
+    for recipe in recipes:
+        if needs_target (recipe):
+            return True
+    return False
 
 def file_time(fname):
     res = 0
@@ -389,6 +503,7 @@ def file_time(fname):
     if tgt_path.is_file():
         res = os.stat(fname).st_mtime
     return res
+
 
 def install_files (info_dict, prefix=None):
     global g_dry_run
@@ -594,7 +709,7 @@ def pymk_default ():
     global ex_cmds
     t = get_target()
 
-    if '--get_run_deps' in builtin_completions and get_cli_option ('--get_run_deps'):
+    if '--get_run_deps' in builtin_completions and get_cli_bool_opt ('--get_run_deps'):
         # Look for all gcc commands that generate an executable and get the
         # packages that provide the shared libraries it uses.
         #
@@ -653,7 +768,7 @@ def pymk_default ():
                 break
         exit ()
 
-    if '--get_build_deps' in builtin_completions and get_cli_option ('--get_build_deps'):
+    if '--get_build_deps' in builtin_completions and get_cli_bool_opt ('--get_build_deps'):
         # Call the target in dry run mode and for each gcc command find the
         # packages that provide the include files it needs.
         #
