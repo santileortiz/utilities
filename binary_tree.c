@@ -89,7 +89,7 @@ void PREFIX ## _tree_insert (struct PREFIX ## _tree_t *tree, KEY_TYPE key, VALUE
 }                                                                                                        \
                                                                                                          \
 bool PREFIX ## _tree_lookup (struct PREFIX ## _tree_t *tree,                                             \
-                             char *key,                                                                  \
+                             KEY_TYPE key,                                                               \
                              struct PREFIX ## _tree_node_t **result)                                     \
 {                                                                                                        \
     bool key_found = false;                                                                              \
