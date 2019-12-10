@@ -2216,7 +2216,7 @@ char* pprintf (mem_pool_t *pool, const char *format, ...)
     size_t size = vsnprintf (NULL, 0, format, args1) + 1;
     va_end (args1);
 
-    char *str = mem_pool_push_size (pool, size);
+    char *str = pom_push_size (pool, size);
 
     vsnprintf (str, size, format, args2);
     va_end (args2);
