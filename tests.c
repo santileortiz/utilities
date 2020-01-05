@@ -3,6 +3,8 @@
  */
 
 #include "common.h"
+#include "linked_list.c"
+#include "test_logger.c"
 
 #include "string_tests.c"
 #include "memory_pool_tests.c"

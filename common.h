@@ -1425,6 +1425,60 @@ void FUNCNAME(TYPE *arr, int n) {                               \
     FUNCNAME ## _user_data (arr,n,NULL);                        \
 }
 
+// Stable templetized merge sort for arrays
+//
+// CMP_A_TO_B is an expression where a and b are pointers to _arr_, it's equal
+// to -1, 0 or 1 if *a and *b compare as less than, equal to or grater than
+// respectively.
+//
+// The reasoning behind this being separate from templ_sort() is that a stable
+// sort requires a 3-way comparison, which makes it a little more inconvinient
+// to instantiate. Writing a IS_A_LT_B expression is much more straightforward
+// than a CMP_A_TO_B expression.
+//
+// NOTE: CMP_A_TO_B as defined, will sort the array in ascending order.
+#define templ_sort_stable(FUNCNAME,TYPE,CMP_A_TO_B)             \
+void FUNCNAME ## _user_data (TYPE *arr, int n, void *user_data) \
+{                                                               \
+    if (arr == NULL || n<=1) {                                  \
+        return;                                                 \
+    } else if (n == 2) {                                        \
+        TYPE *a = &arr[1];                                      \
+        TYPE *b = &arr[0];                                      \
+        int c = CMP_A_TO_B;                                     \
+        if (c == -1) {                                          \
+            swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));      \
+        }                                                       \
+    } else {                                                    \
+        TYPE res[n];                                            \
+        FUNCNAME ## _user_data (arr, n/2, user_data);           \
+        FUNCNAME ## _user_data (&arr[n/2], n-n/2, user_data);   \
+                                                                \
+        int i;                                                  \
+        int h=0;                                                \
+        int k=n/2;                                              \
+        for (i=0; i<n; i++) {                                   \
+            TYPE *a = &arr[h];                                  \
+            TYPE *b = &arr[k];                                  \
+            int c = CMP_A_TO_B;                                 \
+            if (k==n || (h<n/2 && (c < 1))) {                   \
+                res[i] = arr[h];                                \
+                h++;                                            \
+            } else {                                            \
+                res[i] = arr[k];                                \
+                k++;                                            \
+            }                                                   \
+        }                                                       \
+        for (i=0; i<n; i++) {                                   \
+            arr[i] = res[i];                                    \
+        }                                                       \
+    }                                                           \
+}                                                               \
+                                                                \
+void FUNCNAME(TYPE *arr, int n) {                               \
+    FUNCNAME ## _user_data (arr,n,NULL);                        \
+}
+
 typedef struct {
     int origin;
     int key;

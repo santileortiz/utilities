@@ -19,8 +19,8 @@ def binary_tree ():
 
 def expand_macro ():
     """
-    This like a preprocessor but we preserve indentation and don't output line
-    information. It's useful during the development of big macros.
+    This is like a preprocessor but we preserve indentation and don't output
+    line information. It's useful during the development of big macros.
     """
 
     # TODO: Support #include?

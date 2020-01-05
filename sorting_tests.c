@@ -102,6 +102,134 @@ void test_int_values (int *arr, int arr_len)
     printf ("\n");
 }
 
+struct sort_test_struct_t {
+    int first;
+    int second;
+};
+
+void str_cat_struct_array (string_t *str, struct sort_test_struct_t *arr, size_t arr_len)
+{
+    str_cat_printf (str, "{");
+    for (int i=0; i<arr_len; i++) {
+        str_cat_printf (str, "{%i, %i}", arr[i].first, arr[i].second);
+
+        if (i < arr_len-1) {
+            str_cat_printf (str, ", ");
+        }
+    }
+    str_cat_printf (str, "}\n");
+}
+
+// To see how templ_sort is not stable you can switch the definition of
+// stable_struct_sort() to use the non stable algorithm.
+#if 1
+templ_sort_stable (stable_struct_sort, struct sort_test_struct_t,
+                   a->first <= b->first ? (a->first < b->first ? -1 : 0) : 1 );
+#else
+templ_sort (stable_struct_sort, struct sort_test_struct_t, a->first = b->first);
+#endif
+
+bool test_struct_sorting (struct sort_test_struct_t *arr, size_t arr_len, string_t *error)
+{
+    bool success = true;
+
+    stable_struct_sort (arr, arr_len);
+    for (int i=0; i<arr_len-1; i++) {
+        if (arr[i].first > arr[i+1].first) {
+            success = false;
+        }
+    }
+
+    if (!success) {
+        str_cat_c (error, "Failed to sort struct array:\n ");
+        str_cat_struct_array (error, arr, arr_len);
+    }
+
+
+    if (success) {
+        int curr_first = arr[0].first;
+        for (int i=0; i<arr_len-1; i++) {
+            if (arr[i].first == arr[i+1].first) {
+                if (arr[i].second > arr[i+1].second) {
+                    success = false;
+                }
+            }
+        }
+
+        if (!success) {
+            str_cat_c (error, "Sorting of struct array was not stable:\n ");
+            str_cat_struct_array (error, arr, arr_len);
+        }
+    }
+
+    return success;
+}
+
+void test_struct_sort ()
+{
+    bool success = true;
+
+    struct test_ctx_t t = {0};
+    test_push (&t, "Stable sort test");
+
+    {
+        struct sort_test_struct_t arr1[] = {
+            {10, 1},
+            {10, 2},
+            {30, 3},
+            {40, 4},
+            {80, 5},
+            {90, 6},
+            {10, 7},
+            {90, 8},
+            {80, 8},
+            {10, 9},
+            {30, 11},
+            {20, 12},
+            {10, 13},
+            {40, 14},
+            {10, 15},
+            {20, 16}
+        };
+
+        test_push (&t, "arr1");
+        bool test_result = test_struct_sorting (arr1, ARRAY_SIZE(arr1), t.error);
+        test_pop (&t, test_result);
+
+        success = success && test_result;
+    }
+
+    {
+        struct sort_test_struct_t arr2[] = {
+            {10, 1},
+            {10, 2},
+            {10, 3},
+            {10, 4},
+            {10, 5},
+            {10, 6},
+            {10, 7},
+            {10, 8},
+            {10, 9},
+            {10, 10},
+            {10, 11},
+            {10, 12},
+            {10, 13},
+            {10, 14},
+            {10, 15},
+            {10, 16}
+        };
+
+        test_push (&t, "arr2");
+        bool test_result = test_struct_sorting (arr2, ARRAY_SIZE(arr2), t.error);
+        test_pop (&t, test_result);
+
+        success = success && test_result;
+    }
+
+    test_pop (&t, success);
+    printf ("%s", str_data(&t.result));
+}
+
 void sorting_tests ()
 {
     int test_values[] = {10, 3, 5, 20, 1};
@@ -119,4 +247,6 @@ void sorting_tests ()
     my_linked_list_sort (NULL, 0);
     my_linked_list_sort (NULL, -1);
     my_linked_list_sort (NULL, 10);
+
+    test_struct_sort ();
 }
