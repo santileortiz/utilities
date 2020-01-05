@@ -6,28 +6,40 @@ import importlib.util, inspect, pathlib, filecmp
 !!!!!!IMPOTRANT!!!!!
 The idea of this library is to make easy to call python functions located in
 the file pymk.py through the command line. Every function created in that file
-is called a build target because we provide some extra functionality for them.
-At the moment some of these functionalities are:
+is called a 'snip' (short for code snippet). Snips get the following
+functionality automatically:
 
-    - Automatic TAB completions.
-    - Automatic guessing of packages that provide libraries used as gcc flags.
-    - Calling './pymk.py my_target' calls my_target
+    - Calling './pymk.py my_snip' calls my_snip
+    - Automatic TAB completion.
+    - For snips that call gcc through ex(), we can automatically guess the
+      package names that provide libraries used in the compiler flags. This
+      works for deb and rpm packages.
 
-To be able to provide these we need to call the targets in a dry_run mode that
+To be able to provide these we need to call snip functions in a dry_run mode that
 won't have side effects besides updating several global variables in this
-module. For this reason when editing/creating a target function the user has to
-have in mind targets may be called at unexpected times but ONLY in dry_run
-mode. If the target calls functions with side effects besides the ones in this
-module then we tell the user we are in dry_mode run through the g_dry_run
-global variable. Which means the user should separate code with side effects as
-follows:
+module. For this reason when editing/creating a snip function the user has to
+have in mind it may be called at unexpected times but ONLY in dry_run
+mode.
 
-    def my_target():
+If a snip calls functions with side effects besides the ones in this module,
+the user has to determine if the call is happening in dry run mode by checking
+the g_dry_run global variable. If the call is happening in dry run mode,
+external calls with side effect must be skipped. It would look something like:
+
+    def my_snip():
         global g_dry_run
         if not g_dry_run:
             <code with side effects>
 
+Functions with side effects internal to this module do this by default. A
+function that doesn't must be reported as a bug.
 """
+
+# TODO: Implement the functionality mentioned above statically so we don't need
+# a dry run mode and the user can write scripts with more confidence that
+# nothing strange will happen. This would also simplify the internal logic of
+# the code. At least TAB complete should be implementable this way, the
+# dependency computation, I'm not sure.
 
 def get_functions():
     """
@@ -337,7 +349,12 @@ def info (s):
     default_color = '\033[m\033[K'
     print (color+s+default_color)
 
-def get_target ():
+def warn (s):
+    color = '\033[1;33m\033[K'
+    default_color = '\033[m\033[K'
+    print (color+s+default_color)
+
+def get_snip ():
     if len(sys.argv) == 1:
         return 'default'
     else:
@@ -397,6 +414,10 @@ def store_get (name, default=None):
     If _default_!=None and _name_ is not in the cache, the _name_ dictionary
     item will be initialized to _default_.
     """
+
+    # TODO: Eventually remove this warning?
+    if name == 'last_target':
+        warn('Las called snip cache variable was renamed. Please change \'last_target\' to \'last_snip\'')
 
     # Even though we could avoid creating this function and require the user to
     # call store() with value==None, I found this is counter intuitive and hard
@@ -829,9 +850,9 @@ def file_is_elf (fname):
 def file_exists (fname):
     return pathlib.Path(fname).exists()
 
-def pymk_default (skip_call_cache=[]):
+def pymk_default (skip_snip_cache=[]):
     global ex_cmds
-    t = get_target()
+    t = get_snip()
 
     if '--get_run_deps' in builtin_completions and get_cli_bool_opt ('--get_run_deps'):
         # Look for all gcc commands that generate an executable and get the
@@ -846,12 +867,12 @@ def pymk_default (skip_call_cache=[]):
         #     project. For example configuration files like /etc/os-release
         #     which is provided by systemd, or icon themes.
         #
-        # First we try to get the executable using a dry run of the target, if
-        # we can't find the output file then runs the target and try again. I'm
-        # still not sure this is a good default because if a target generates
+        # First we try to get the executable callin a dry run of the snip, if
+        # we can't find the output file then run the snip and try again. I'm
+        # still not sure this is a good default because if a snip generates
         # something using gcc and then deletes it, then this function will
-        # always call the target. Still, knowing if a target deletes gcc's
-        # output seems intractable, there are too many ways to do it.
+        # always call the snip. Still, knowing if a snip deletes gcc's output
+        # seems intractable.
         if pkg_manager_type == '':
             exit ()
 
@@ -871,7 +892,7 @@ def pymk_default (skip_call_cache=[]):
                             break
                         else:
                             # Output does not exist but we already ran the
-                            # target. Probably the target itself deletes this
+                            # snip. Probably the snip itself deletes this
                             # file. Skip it.
                             continue
                     elif file_is_elf (out_file):
@@ -888,12 +909,12 @@ def pymk_default (skip_call_cache=[]):
                         print (' '.join (deps))
                         print ()
             if use_dry_run == True:
-                # Calling the target wasn't necessary, we are done.
+                # Calling the snip wasn't necessary, we are done.
                 break
         exit ()
 
     if '--get_build_deps' in builtin_completions and get_cli_bool_opt ('--get_build_deps'):
-        # Call the target in dry run mode and for each gcc command find the
+        # Call the snip in dry run mode and for each gcc command find the
         # packages that provide the include files it needs.
         #
         # Note that included files are not the only way a project gets build
@@ -922,16 +943,16 @@ def pymk_default (skip_call_cache=[]):
         deps_list = list(deps)
         deps_list.append ('python3')
         deps_list.sort()
-        info ('Build dependencies for target: ' + t)
+        info ('Build dependencies for snip: ' + t)
         print (' '.join(deps_list), end='\n\n')
 
         deps_list = prune_pkg_list (deps_list)
         deps_list.sort()
-        info ('Minimal build dependencies for target: ' + t)
+        info ('Minimal build dependencies for snip: ' + t)
         print (" ".join (deps_list), end='\n\n')
         exit ()
 
     call_user_function (t)
-    if t != 'default' and t != 'install' and t not in skip_call_cache:
-        store ('last_target', value=t)
+    if t != 'default' and t != 'install' and t not in skip_snip_cache:
+        store ('last_snip', value=t)
 

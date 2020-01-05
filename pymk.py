@@ -8,7 +8,7 @@ assert sys.version_info >= (3,2)
 ensure_dir ("bin")
 
 def default ():
-    target = store_get ('last_target', 'tests')
+    target = store_get ('last_snip', 'tests')
     call_user_function(target)
 
 def tests ():
@@ -104,5 +104,5 @@ if __name__ == "__main__":
     # If --get_completions is set, handle_tab_complete() calls exit().
     handle_tab_complete ()
 
-    pymk_default(skip_call_cache=['expand_macro'])
+    pymk_default(skip_snip_cache=['expand_macro'])
 
