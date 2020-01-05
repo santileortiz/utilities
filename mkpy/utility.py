@@ -132,17 +132,21 @@ def handle_tab_complete ():
                 print (' '.join(def_opts))
         exit ()
 
-def get_cli_arg_opt (opts, values=None, unique_option=False):
+def get_cli_arg_opt (opts, values=None, unique_option=False, default=None):
     """
     Parses sys.argv looking for option _opt_ and expects an argument after it.
 
-    If _opt_ is found and it has an argument after it, it returns the value of
-    the argument as a string.
-    If _values_ is set, we check that the argument is present in the list.
-    If _opt_ is not found, there is no argument or _values_ is provided and the
-    argument doesn't match, it returns None.
+    If _opt_ is found in argv and it has an argument after it, it returns the
+    value of the argument as a string.
+    If a list of strings is passed in _values_ , we check that the argument is
+    present in the list, if it isn't None is returned as error.
+    If _opt_ is not found in argv the return value depends on the value of
+    _default_, if it's different to None _default_ is casted to string and
+    returned, otherwise None is returned.
 
     When unique_option is True then _opt_ must be the only option used.
+
+    NOTE: This always return a string. Casts must be done by the user.
     """
     global cli_completions
 
@@ -166,10 +170,14 @@ def get_cli_arg_opt (opts, values=None, unique_option=False):
                 break
         i = i+1
 
+    # TODO: I'm thinking unique_option is not that useful. Probably remove it.
     if unique_option and res != None:
         if len(sys.argv) != 3:
             print ('Option '+opt+' receives no other option.')
             return
+
+    if res == None and default != None:
+        res = str (default)
 
     if values != None and res != None:
         if res not in values:
@@ -338,7 +346,7 @@ def get_target ():
         else:
             return sys.argv[1]
 
-def pers_get_cache_dict ():
+def get_cache_dict ():
     cache_dict = {}
     if os.path.exists('mkpy/cache'):
         cache = open ('mkpy/cache', 'r')
@@ -346,23 +354,24 @@ def pers_get_cache_dict ():
         cache.close ()
     return cache_dict
 
-def pers_set_cache_dict (cache_dict):
+def set_cache_dict (cache_dict):
     cache = open ('mkpy/cache', 'w')
     cache.write (str(cache_dict)+'\n')
     cache.close ()
 
-def pers (name, default=None, value=None):
+def store (name, value, default=None):
     """
-    Makes persistent some value across runs of the script storing it in a
-    dctionary on "mkpy/cache".  Stores _name_:_value_ pair in cache unless
-    value==None.  Returns the value of _name_ in the cache.
+    Stores _value_ as an element of a dictionary in mkpy/cache with _name_ as
+    key. Returns the value of _name_ in the cache. Used to reuse values across
+    runs of the script.
 
-    If default is used, when _value_==None and _name_ is not in the cache the
-    pair _name_:_default is stored.
+    If _default_ is set, _value_==None and _name_ is not in the cache, then
+    _default_ will be the value stored. This is useful to make this function
+    always return a value, even if the cache hasn't been created yet.
     """
     global g_dry_run
 
-    cache_dict = pers_get_cache_dict ()
+    cache_dict = get_cache_dict ()
 
     if value == None:
         if name in cache_dict.keys ():
@@ -371,25 +380,106 @@ def pers (name, default=None, value=None):
             if default != None:
                 cache_dict[name] = default
             else:
-                print ('Key '+name+' is not in cache.')
+                print ('Key \''+name+'\' is not in pymk/cache.')
                 return
     else:
         cache_dict[name] = value
 
-    # In dry ryn mode just don't update the cache file
+    # In dry run mode just don't update the cache file
     if not g_dry_run:
-        pers_set_cache_dict (cache_dict)
+        set_cache_dict (cache_dict)
     return cache_dict.get (name)
 
+def store_get (name, default=None):
+    """
+    Returns the stored value of _name_ in the dictionary at mkpy/cache.
+
+    If _default_!=None and _name_ is not in the cache, the _name_ dictionary
+    item will be initialized to _default_.
+    """
+
+    # Even though we could avoid creating this function and require the user to
+    # call store() with value==None, I found this is counter intuitive and hard
+    # to remember, because it mixes a function that stores with one that gets
+    # so the argument order is not straightforward, when using it to store the
+    # 'natural' order is (name, value, default), but when using it to get a
+    # value the common order would be (name, default, value) as value isn't
+    # really useful here and needs to be set to None.
+    return store (name, None, default)
+
+def store_init (name, value):
+    """
+    Initializes the _name_ entry in the dictionary at mkpy/cache to _value_.
+    This will only happen if _name_ is not yet in the cache.
+    """
+
+    # As with store_get() we could avoid this function, but it also
+    # semantically overloads the store() function and makes it harder to know
+    # the intent when reading a script that uses it. This makes the intent
+    # clear as it also won't return anything.
+    if value == None:
+        print ('Initializing store entry \''+name+'\' to None is not allowed.')
+    else:
+        store (name, None, value)
+
+# DEPRECATED
+# I didn't like how I overloaded this function with at least 3 different
+# semantics. I splitted it into the store* functions that make these semantics
+# explicit.
+#
+#def pers (name, default=None, value=None):
+#    """
+#    Makes persistent some value across runs of the script, storing it as an
+#    element of a dictionary in mkpy/cache. Stores _name_:_value_ pair in cache
+#    unless value==None. Returns the value of _name_ in the cache.
+#
+#    If default is used, when _value_==None and _name_ is not in the cache the
+#    pair _name_:_default is stored.
+#    """
+#    global g_dry_run
+#
+#    cache_dict = get_cache_dict ()
+#
+#    if value == None:
+#        if name in cache_dict.keys ():
+#            return cache_dict[name]
+#        else:
+#            if default != None:
+#                cache_dict[name] = default
+#            else:
+#                print ('Key '+name+' is not in cache.')
+#                return
+#    else:
+#        cache_dict[name] = value
+#
+#    # In dry run mode just don't update the cache file
+#    if not g_dry_run:
+#        set_cache_dict (cache_dict)
+#    return cache_dict.get (name)
+
 def pers_func_f (name, func, args, kwargs={}):
-    # TODO: Is there a valid usecase where arg==None? for now I can't think of
-    # any one.
-    if args == None:
-        print ("I didn't expect to receive arg==None")
+    """
+    This function calls _func_(*args, **kwargs), stores whatever it returns in
+    mkpy/cache with _name_ as key. If this function is called agaín, and _args_
+    and _kwargs_ don't change, the previous result is returned without calling
+    _func_ agaín.
+
+    We assume the return value of _func_ only depends on its arguments. If it
+    depends on external state, there is no way we can detect _func_ needs to be
+    called again.
+    """
+    # I don't think there is a valud usecase where we would receive no
+    # arguments. If there are no arguments then the return value of the
+    # function is always the same and there is no need to use this to cache the
+    # result. It can be cached once with store().
+    if (args == None or len(args) == 0) and len(kwargs) == 0:
+        print ("pers_func_f expects at least one argument for func.")
         return
 
+    # TODO: What should we do in dry run mode?.
+
     call_func = False
-    cache_dict = pers_get_cache_dict ()
+    cache_dict = get_cache_dict ()
 
     # If args changed from last call update them in cache and trigger
     # execution of func
@@ -415,9 +505,9 @@ def pers_func_f (name, func, args, kwargs={}):
     # If some argument changed or func has never been called, call func and
     # store result in cache. Else return cached value.
     if last_args == None or call_func:
-        res = func(*args, **kwargs)
+        res = str(func(*args, **kwargs))
         cache_dict[name] = res
-        pers_set_cache_dict (cache_dict)
+        set_cache_dict (cache_dict)
         return res
     else:
         return cache_dict[name]
@@ -425,17 +515,46 @@ def pers_func_f (name, func, args, kwargs={}):
 def pers_func (name, func, arg):
     """
     Simpler version of pers_func_f for the case when _func_ has a single
-    argument
+    argument.
     """
+    # TODO: I haven't used pers_func_f enough to know if this is more common in
+    # general. If it isn't then we should remove this and call pers_func_f
+    # always (rename it to pers_func).
+    #
+    #     pers_func(name, func, [arg]) vs pers_func(name, func, arg)
+    #
+    # What I'm worried is that people would find it counter intuitive to have
+    # to wrap arg into a list.
     return pers_func_f (name, func, [arg])
+
+def path_resolve (path_s):
+    return os.path.expanduser(path_s.format(**get_user_str_vars()))
 
 def path_exists (path_s):
     """
     Convenience function that checks the existance of a file or directory. It
     supports context variable substitutions.
     """
-    resolved_path = path_s.format(**get_user_str_vars())
-    return pathlib.Path(resolved_path).exists()
+    return pathlib.Path(path_resolve(path_s)).exists()
+
+def path_dirname (path_s):
+    return os.path.dirname(path_s)
+
+def path_basename (path_s):
+    return os.path.basename(path_s)
+
+def path_cat (path, *paths):
+    # I don't like how os.path.join() resets to root if it finds os.sep as the
+    # start of an element in *paths. This ignores those leading separators.
+
+    stripped_paths = []
+    for p in paths:
+        if p.startswith(os.sep):
+            stripped_paths.append(p[1:])
+        else:
+            stripped_paths.append(p)
+
+    return os.path.join(path, *stripped_paths)
 
 # This could also be accomplished by:
 #   ex ('mkdir -p {path_s}')
@@ -445,7 +564,8 @@ def ensure_dir (path_s):
     if g_dry_run:
         return
 
-    if not path_exists(path_s):
+    resolved_path = path_resolve(path_s)
+    if not path_exists(resolved_path):
         os.makedirs (resolved_path)
 
 def needs_target (recipe):
@@ -581,35 +701,39 @@ def deb_find_deps (pkg_name):
     return deps_str.split ('\n')
 
 def get_pkg_manager_type ():
-    os_release = open ('/etc/os-release', "r")
-    os_id = ''
-    os_id_like = ''
-    for l in os_release:
-        if l.startswith ('ID='):
-            os_id = l.replace ('ID=', '').strip()
-        elif l.startswith ('ID_LIKE='):
-            os_id_like = l.replace ('ID_LIKE=', '').strip()
-    os_release.close()
+    if path_exists ('/etc/os-release'):
+        os_release = open ('/etc/os-release', "r")
+        os_id = ''
+        os_id_like = ''
+        for l in os_release:
+            if l.startswith ('ID='):
+                os_id = l.replace ('ID=', '').strip()
+            elif l.startswith ('ID_LIKE='):
+                os_id_like = l.replace ('ID_LIKE=', '').strip()
+        os_release.close()
 
-    os_id = os_id.replace ("'",'').replace ('"', '')
-    os_id_like = os_id_like.replace ("'",'').replace ('"', '')
+        os_id = os_id.replace ("'",'').replace ('"', '')
+        os_id_like = os_id_like.replace ("'",'').replace ('"', '')
 
-    def match_os_id (wanted_ids, os_id, os_id_like):
-        for i in wanted_ids:
-            if i == os_id:
-                return True
-            elif i == os_id_like:
-                return True
-            else:
-                return False
+        def match_os_id (wanted_ids, os_id, os_id_like):
+            for i in wanted_ids:
+                if i == os_id:
+                    return True
+                elif i == os_id_like:
+                    return True
+                else:
+                    return False
 
-    deb_oses = ['elementary', 'ubuntu', 'debian']
-    rpm_oses = ['fedora']
+        deb_oses = ['elementary', 'ubuntu', 'debian']
+        rpm_oses = ['fedora']
 
-    if match_os_id (deb_oses, os_id, os_id_like):
-        return 'deb'
-    elif match_os_id (rpm_oses, os_id, os_id_like):
-        return 'rpm'
+        if match_os_id (deb_oses, os_id, os_id_like):
+            return 'deb'
+        elif match_os_id (rpm_oses, os_id, os_id_like):
+            return 'rpm'
+        else:
+            return ''
+
     else:
         return ''
 
@@ -705,7 +829,7 @@ def file_is_elf (fname):
 def file_exists (fname):
     return pathlib.Path(fname).exists()
 
-def pymk_default ():
+def pymk_default (skip_call_cache=[]):
     global ex_cmds
     t = get_target()
 
@@ -808,6 +932,6 @@ def pymk_default ():
         exit ()
 
     call_user_function (t)
-    if t != 'default' and t != 'install':
-        pers ('last_target', value=t)
+    if t != 'default' and t != 'install' and t not in skip_call_cache:
+        store ('last_target', value=t)
 
