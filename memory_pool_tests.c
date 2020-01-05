@@ -62,7 +62,7 @@ void memory_pool_tests ()
     printf ("\n");
 
     printf ("----TEMPORARY MEMORY START----\n");
-    mem_pool_temp_marker_t mrkr = mem_pool_begin_temporary_memory (&pool);
+    mem_pool_marker_t mrkr = mem_pool_begin_temporary_memory (&pool);
 
     printf ("Allocate 2nd struct.\n");
     push_test_struct (&pool, 4, 1.5, "And another long string");
