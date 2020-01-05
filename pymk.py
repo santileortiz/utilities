@@ -32,12 +32,13 @@ def expand_macro ():
     
     fpath = args[1]
     macro = args[2]
-    macro_name = macro.split('(')[0]
+    macro_name = macro.split('(')[0].strip()
 
     f = open (fpath)
     #code = f.read()
     #f.close()
 
+    parsing_comment = False
     start = False
     macro_code = ''
     for line in f:
@@ -47,7 +48,20 @@ def expand_macro ():
 
         if start:
             macro_code += line
-            if line.endswith('\\\n'):
+
+            # Macros only allow multiline comments in them. In that case lines
+            # won't end with \\ so we need to detect this case separately.
+            # FIXME: This will break if the code contains a string with "/*" or
+            # "*/" in it. We should be more clever about it.
+            # FIXME: This will also detect a line with "/*/" as the start and
+            # end of a multiline comment. Lines like this are only starts, not
+            # ends.
+            if "/*" in line:
+                parsing_comment = True
+            if "*/" in line:
+                parsing_comment = False
+
+            if line.endswith('\\\n') or parsing_comment:
                 continue
             elif line.endswith('\n'):
                 break

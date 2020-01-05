@@ -47,10 +47,20 @@ class file_scanner:
 def scan_macro_declaration(scnr, macro):
     args = []
     scnr.str(macro)
+    scnr.consume_spaces()
     if scnr.char ('('):
         start = scnr.pos
-        scnr.to_char(')')
+
+        paren_count = 1;
+        while not scnr.is_eof and paren_count > 0:
+            if scnr.char ('('):
+                paren_count += 1
+            elif scnr.char (')'):
+                paren_count -= 1
+            else:
+                scnr.advance_char()
+
         end = scnr.pos
         args = scnr.string[start:end-1].split(',')
 
-    return args
+    return [arg.strip() for arg in args]
