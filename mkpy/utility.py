@@ -49,6 +49,8 @@ def get_functions():
     NOTE: Functions imported like 'from <module> import <function>' are
     included too.
     """
+    # Why does this return a list of tuples and not a map? I guess function
+    # names can be repeated? under which circumstances?
     return inspect.getmembers(sys.modules['__main__'], inspect.isfunction).copy()
 
 def get_user_functions():
@@ -57,6 +59,15 @@ def get_user_functions():
     """
     keys = globals().copy().keys()
     return [(m,v) for m,v in get_functions() if m not in keys]
+
+def user_function_exists(name):
+    fun = None
+    for f_name, f in get_user_functions():
+        if f_name == name:
+            fun = f
+            break
+
+    return fun != None
 
 def call_user_function(name, dry_run=False):
     fun = None
@@ -71,6 +82,7 @@ def call_user_function(name, dry_run=False):
 
     fun() if fun else print ('No function: '+name)
 
+    # Why do we do this? it seems highly suspicious...
     if dry_run:
         g_dry_run = False
     return
@@ -372,6 +384,9 @@ def get_cache_dict ():
     return cache_dict
 
 def set_cache_dict (cache_dict):
+    if not path_exists('mkpy'):
+        return
+
     cache = open ('mkpy/cache', 'w')
     cache.write (str(cache_dict)+'\n')
     cache.close ()
@@ -952,7 +967,11 @@ def pymk_default (skip_snip_cache=[]):
         print (" ".join (deps_list), end='\n\n')
         exit ()
 
-    call_user_function (t)
-    if t != 'default' and t != 'install' and t not in skip_snip_cache:
-        store ('last_snip', value=t)
+    if not user_function_exists(t) and t == 'default':
+        print ('No default snip. Doing nothing.')
+
+    else:
+        call_user_function (t)
+        if t != 'default' and t != 'install' and t not in skip_snip_cache:
+            store ('last_snip', value=t)
 
