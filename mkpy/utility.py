@@ -1,4 +1,4 @@
-import sys, subprocess, os, ast, shutil
+import sys, subprocess, os, ast, shutil, platform
 
 import importlib.util, inspect, pathlib, filecmp
 
@@ -87,9 +87,21 @@ def call_user_function(name, dry_run=False):
         g_dry_run = False
     return
 
+def get_completions_path():
+    completions_path = ''
+
+    if platform.system() == 'Darwin':
+        if ex('which brew', echo=False, no_stdout=True) == 0:
+            prefix = ex('brew --prefix', ret_stdout=True, echo=False)
+            completions_path = path_cat(prefix, '/etc/bash_completion.d/pymk.py')
+    elif platform.system() == 'Linux':
+        completions_path = '/usr/share/bash-completion/completions/pymk.py'
+
+    return completions_path
+
 def check_completions ():
-    comp_path = pathlib.Path('/usr/share/bash-completion/completions/pymk.py')
-    if not comp_path.exists():
+    completions_path = get_completions_path()
+    if completions_path == '' or not path_exists(completions_path):
         return False
     else:
         return True
@@ -120,11 +132,19 @@ def handle_tab_complete ():
     if not check_completions ():
         if get_cli_bool_opt('--install_completions'):
             print ('Installing tab completions...')
-            ex ("cp mkpy/pymk.py /usr/share/bash-completion/completions/")
+            ex ('cp mkpy/pymk.py {}'.format(completion_script, get_completions_path()))
             exit ()
+
         else:
-            print ('Tab completions not installed:')
-            print ('Use "sudo ./pymk.py --install_completions" to install them\n')
+            if platform.system() == 'Darwin':
+                warn('Tab completions not installed:')
+                print(' 1) Install brew (https://brew.sh/)')
+                print(' 2) Install bash-completion with "brew install bash-completion")')
+                print(' 3) Run "sudo ./pymk.py --install_completions" to install Pymk completions.\n')
+            elif platform.system() == 'Linux':
+                warn('Tab completions not installed:')
+                print(' Use "sudo ./pymk.py --install_completions" to install them\n')
+
         return
 
     # Add the builtin tab completions the user wants

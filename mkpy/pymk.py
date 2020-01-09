@@ -3,7 +3,12 @@
 _pymk()
 {
     local cur prev words cword
-    _init_completion || return
+
+
+    # FIXME: Why is there no _init_completion in Brew's bash_complete?
+    #_init_completion || return
+    COMPREPLY=()
+    _get_comp_words_by_ref cur prev words cword
 
     res="$(./pymk.py --get_completions "$COMP_POINT $COMP_LINE")"
     COMPREPLY=( $( compgen -W '$res' -- "$cur" ) )
