@@ -132,6 +132,7 @@ int main (int argc, char **argv)
     }
 
     printf ("\n%s", str_data(&t.result));
+    test_ctx_destroy (&t);
 
     return 0;
 }

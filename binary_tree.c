@@ -121,17 +121,30 @@ bool PREFIX ## _tree_lookup (struct PREFIX ## _tree_t *tree,                    
     return key_found;                                                                                    \
 }
 
+// TODO: Is there a way to initialize VARNAME to the leftomost node, and add
+// nodes in the path to the stack, but without declaring the
+// __binary_tree__stack_ and __binary_tree__stack_idx_ variables? They seem to
+// be required because we need to pass them to initialize the for loop state.
 #define BINARY_TREE_FOR(PREFIX,TREE,VARNAME)                                                             \
                                                                                                          \
 struct PREFIX ## _tree_node_t *VARNAME = (TREE)->root;                                                   \
+struct PREFIX ## _tree_node_t **__binary_tree__stack_;                                                   \
+int __binary_tree__stack_idx_ = 0;                                                                       \
+{                                                                                                        \
+    __binary_tree__stack_ = malloc ((TREE)->num_nodes*sizeof(struct PREFIX ## _tree_node_t));            \
+    while (VARNAME->left != NULL) {                                                                      \
+        __binary_tree__stack_[__binary_tree__stack_idx_++] = VARNAME;                                    \
+        VARNAME = VARNAME->left;                                                                         \
+    }                                                                                                    \
+}                                                                                                        \
 for (struct {                                                                                            \
          bool break_needed;                                                                              \
          int stack_idx;                                                                                  \
          struct PREFIX ## _tree_node_t **stack;                                                          \
      } _loop_ctx = {                                                                                     \
          false,                                                                                          \
-         0,                                                                                              \
-         malloc ((TREE)->num_nodes*sizeof(struct PREFIX ## _tree_node_t))                                \
+         __binary_tree__stack_idx_,                                                                      \
+         __binary_tree__stack_                                                                           \
      };                                                                                                  \
                                                                                                          \
      _loop_ctx.break_needed = false,                                                                     \
