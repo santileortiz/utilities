@@ -40,6 +40,7 @@ void binary_tree_sample ()
 char **key_arrs[] = {
     (char *[]){"zeus", "ares", "juno", NULL},
     (char *[]){"Santiago", "Cash", "Institute", "Foo", "Banana", "Yule", NULL},
+
     NULL
 };
 
