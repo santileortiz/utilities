@@ -121,33 +121,23 @@ bool PREFIX ## _tree_lookup (struct PREFIX ## _tree_t *tree,                    
     return key_found;                                                                                    \
 }
 
-// TODO: Is there a way to initialize VARNAME to the leftomost node, and add
-// nodes in the path to the stack, but without declaring the
-// __binary_tree__stack_ and __binary_tree__stack_idx_ variables? They seem to
-// be required because we need to pass them to initialize the for loop state.
 #define BINARY_TREE_FOR(PREFIX,TREE,VARNAME)                                                             \
                                                                                                          \
 struct PREFIX ## _tree_node_t *VARNAME = (TREE)->root;                                                   \
-struct PREFIX ## _tree_node_t **VARNAME ## __binary_tree__stack_;                                        \
-int VARNAME ## __binary_tree__stack_idx_ = 0;                                                            \
-{                                                                                                        \
-    VARNAME ## __binary_tree__stack_ = malloc ((TREE)->num_nodes*sizeof(struct PREFIX ## _tree_node_t)); \
-    while (VARNAME->left != NULL) {                                                                      \
-        VARNAME ## __binary_tree__stack_[VARNAME ## __binary_tree__stack_idx_++] = VARNAME;              \
-        VARNAME = VARNAME->left;                                                                         \
-    }                                                                                                    \
-}                                                                                                        \
 for (struct {                                                                                            \
          bool break_needed;                                                                              \
+         bool visit_node;                                                                                \
          int stack_idx;                                                                                  \
          struct PREFIX ## _tree_node_t **stack;                                                          \
      } _loop_ctx = {                                                                                     \
          false,                                                                                          \
-         VARNAME ## __binary_tree__stack_idx_,                                                           \
-         VARNAME ## __binary_tree__stack_                                                                \
+         false,                                                                                          \
+         0,                                                                                              \
+         malloc ((TREE)->num_nodes*sizeof(struct PREFIX ## _tree_node_t))                                \
      };                                                                                                  \
                                                                                                          \
      _loop_ctx.break_needed = false,                                                                     \
+     _loop_ctx.visit_node = false,                                                                       \
      (VARNAME != NULL ?                                                                                  \
         (_loop_ctx.stack[_loop_ctx.stack_idx++] = VARNAME,                                               \
          VARNAME = VARNAME->left,                                                                        \
@@ -156,11 +146,14 @@ for (struct {                                                                   
         (_loop_ctx.stack_idx == 0 ?                                                                      \
             (_loop_ctx.break_needed = true, 0)                                                           \
         :                                                                                                \
-            (VARNAME = _loop_ctx.stack[--_loop_ctx.stack_idx], 0),                                       \
+            (VARNAME = _loop_ctx.stack[--_loop_ctx.stack_idx],                                           \
+             _loop_ctx.visit_node = true,                                                                \
+             0),                                                                                         \
         0)                                                                                               \
      ),                                                                                                  \
      _loop_ctx.break_needed ? free (_loop_ctx.stack), false : true;                                      \
                                                                                                          \
-     VARNAME != NULL ?                                                                                   \
+     _loop_ctx.visit_node ?                                                                              \
          (VARNAME = VARNAME->right, 0) : 0)                                                              \
-     if (VARNAME != NULL)
+                                                                                                         \
+if (_loop_ctx.visit_node)

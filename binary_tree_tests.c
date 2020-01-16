@@ -40,6 +40,7 @@ void binary_tree_sample ()
 char **key_arrs[] = {
     (char *[]){"zeus", "ares", "juno", NULL},
     (char *[]){"Santiago", "Cash", "Institute", "Foo", "Banana", "Yule", NULL},
+    (char *[]){"Santiago", "Cash", "Institute", "Foo", "Banana", "Yule", "Derek", "Darwin", NULL},
 
     NULL
 };
@@ -79,6 +80,7 @@ int main (int argc, char **argv)
     char **arr;
     size_t arr_len;
     for (int key_arr_idx=0; get_test_key_list (key_arr_idx, &arr, &arr_len); key_arr_idx++) {
+        printf ("Arr Len: %ld\n", arr_len);
         bool success = true;
         test_push (&t, "Key arr %d", key_arr_idx);
 
@@ -88,15 +90,18 @@ int main (int argc, char **argv)
         }
 
         // Test all keys are being iterated
-        int num_nodes = 0;
+        int num_nodes_interated = 0;
         {
             test_push (&t, "All nodes are iterated");
             BINARY_TREE_FOR(str_int, &tree, n)
             {
-                num_nodes++;
+                num_nodes_interated++;
             }
 
-            bool result = num_nodes==arr_len;
+            bool result = num_nodes_interated==arr_len;
+            if (!result) {
+                str_set_printf (t.error, "Nodes: %ld, Iterated: %d\n", arr_len, num_nodes_interated);
+            }
             test_pop (&t, result);
             success = success && result;
         }
@@ -116,7 +121,7 @@ int main (int argc, char **argv)
             }
 
             bool result = true;
-            for (int i=0; i<num_nodes-1; i++) {
+            for (int i=0; i<num_nodes_interated-1; i++) {
                 if (strcmp (nodes[i]->key, nodes[i+1]->key) > 0) {
                     result = false;
                     break;
