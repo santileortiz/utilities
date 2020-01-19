@@ -3065,7 +3065,7 @@ TYPE *(SYMBOL);                                                                 
     if (shared_fd == -1 && errno == EEXIST) {                                                     \
         printf ("Shared variable name %s exists, missing call to UNLINK_SHARED_VARIABLE*.\n",     \
                 NAME);                                                                            \
-        UNLINK_SHARED_VARIABLE (NAME)                                                             \
+        UNLINK_SHARED_VARIABLE_NAMED (NAME)                                                       \
                                                                                                   \
         shared_fd = shm_open (NAME,                                                               \
                               O_CREAT | O_EXCL | O_RDWR, S_IRWXU | S_IRWXG);                      \
