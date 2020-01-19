@@ -294,7 +294,7 @@ bool get_struct_linked_list (mem_pool_t *pool, int i, struct sort_test_struct_t 
         struct sort_test_struct_t *new_list_end = NULL;
         
         for (int i=0; i<int_arr_len; i++) {
-            LINKED_LIST_APPEND_NEW(struct sort_test_struct_t, new_list, pool, new_list_element);
+            LINKED_LIST_APPEND_NEW(pool, struct sort_test_struct_t, new_list, new_list_element);
             new_list_element->first = int_arr[i];
             new_list_element->second = i+1;
         }

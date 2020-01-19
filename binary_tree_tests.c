@@ -2,7 +2,6 @@
  * Copiright (C) 2019 Santiago León O.
  */
 #include "common.h"
-#include "linked_list.c"
 #include "test_logger.c"
 #include "binary_tree.c"
 

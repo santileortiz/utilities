@@ -2,6 +2,13 @@
  * Copiright (C) 2020 Santiago León O.
  */
 
+// These are required for the CRASH_TEST() and CRASH_TEST_AND_RUN() macros.
+// They also require adding -lrt as build flag.
+// TODO: How can we make this detail easily discoverable by users? Where to
+// document it?
+#include <sys/wait.h>
+#include <sys/mman.h>
+
 struct test_t {
     string_t output;
     string_t error;
@@ -42,7 +49,7 @@ void test_push (struct test_ctx_t *tc, char *name_format, ...)
 {
     struct test_t *test;
     if (tc->test_fl == NULL) {
-        LINKED_LIST_PUSH_NEW (struct test_t, tc->test_stack, &tc->pool, new_test);
+        LINKED_LIST_PUSH_NEW (&tc->pool, struct test_t, tc->test_stack, new_test);
         str_set_pooled (&tc->pool, &new_test->error, "");
         str_set_pooled (&tc->pool, &new_test->output, "");
         str_set_pooled (&tc->pool, &new_test->children, "");
@@ -100,3 +107,71 @@ void test_pop (struct test_ctx_t *tc, bool success)
         str_cat (&tc->result, &curr_test->output);
     }
 }
+
+#define CRASH_SAFE_TEST_SHARED_VARIABLE_NAME "TEST_CRASH_SAFE_success"
+
+bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
+                                   char *stdout_fname, char *stderr_fname,
+                                   string_t *result)
+{
+    bool res = false;
+
+    int child_status;
+    wait (&child_status);
+
+    if (!WIFEXITED(child_status)) {
+        *success = false;
+        str_cat_printf (result, "Exited abnormally with status: %d\n", child_status);
+    }
+
+    if (!*success) {
+        char *stdout_str = full_file_read (pool, stdout_fname);
+        if (*stdout_str != '\0') {
+            str_cat_c (result, ECMA_CYAN("stdout:\n"));
+            str_cat_indented_c (result, stdout_str, 2);
+        }
+
+        char *stderr_str = full_file_read (pool, stderr_fname);
+        if (*stderr_str != '\0') {
+            str_cat_c (result, ECMA_CYAN("stderr:\n"));
+            str_cat_indented_c (result, stderr_str, 2);
+        }
+    }
+
+    res = *success;
+
+    unlink (stdout_fname);
+    unlink (stderr_fname);
+
+    UNLINK_SHARED_VARIABLE_NAMED (CRASH_SAFE_TEST_SHARED_VARIABLE_NAME);
+
+    return res;
+}
+
+#define CRASH_TEST(SUCCESS,OUTPUT,CODE)                                                                 \
+{                                                                                                       \
+    char *__crash_safe_stdout_fname = "tmp_stdout";                                                     \
+    char *__crash_safe_stderr_fname = "tmp_stderr";                                                     \
+    mem_pool_t __crash_safe_pool = {0};                                                                 \
+    NEW_SHARED_VARIABLE_NAMED (bool, __crash_safe_success, true, CRASH_SAFE_TEST_SHARED_VARIABLE_NAME); \
+    if (fork() == 0) {                                                                                  \
+        freopen (__crash_safe_stdout_fname, "w", stdout);                                               \
+        setvbuf (stdout, NULL, _IONBF, 0);                                                              \
+                                                                                                        \
+        freopen (__crash_safe_stderr_fname, "w", stderr);                                               \
+        setvbuf (stderr, NULL, _IONBF, 0);                                                              \
+                                                                                                        \
+        CODE                                                                                            \
+                                                                                                        \
+        exit(0);                                                                                        \
+    }                                                                                                   \
+    SUCCESS = __crash_safe_wait_and_output (&__crash_safe_pool, __crash_safe_success,                   \
+                                            __crash_safe_stdout_fname, __crash_safe_stderr_fname,       \
+                                            OUTPUT);                                                    \
+}
+
+#define CRASH_TEST_AND_RUN(SUCCESS,OUTPUT,CODE)  \
+    CRASH_TEST(SUCCESS,OUTPUT,CODE)              \
+    if (SUCCESS) {                               \
+        CODE                                     \
+    }

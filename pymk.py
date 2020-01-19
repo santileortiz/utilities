@@ -12,10 +12,10 @@ def default ():
     call_user_function(target)
 
 def tests ():
-    ex ('gcc -g -o bin/tests tests.c -lm')
+    ex ('gcc -g -o bin/tests tests.c -lm -lrt')
 
 def binary_tree ():
-    ex ('gcc -Wall -g -o bin/binary_tree binary_tree_tests.c -lm')
+    ex ('gcc -Wall -g -o bin/binary_tree binary_tree_tests.c -lm -lrt')
 
 def expand_macro ():
     """
