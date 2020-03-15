@@ -119,6 +119,23 @@ bool PREFIX ## _tree_lookup (struct PREFIX ## _tree_t *tree,                    
     }                                                                                                    \
                                                                                                          \
     return key_found;                                                                                    \
+}                                                                                                        \
+                                                                                                         \
+/*
+ * This is only a convenience function. A zeroed out value will be returned
+ * if the key is not found. There is no way to differentiate a zeroed out
+ * stored value from a non existing key, use *_tree_lookup() for that.
+ */                                                                                                      \
+VALUE_TYPE PREFIX ## _get (struct PREFIX ## _tree_t *tree,                                               \
+                     KEY_TYPE key)                                                                       \
+{                                                                                                        \
+    VALUE_TYPE res = ZERO_INIT(VALUE_TYPE);                                                              \
+    struct PREFIX ## _tree_node_t *result_node;                                                          \
+    if (PREFIX ## _tree_lookup (tree, key, &result_node)) {                                              \
+        res = result_node->value;                                                                        \
+    }                                                                                                    \
+                                                                                                         \
+    return res;                                                                                          \
 }
 
 #define BINARY_TREE_FOR(PREFIX,TREE,VARNAME)                                                             \

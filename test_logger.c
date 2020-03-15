@@ -61,7 +61,7 @@ void test_push (struct test_ctx_t *tc, char *name_format, ...)
         tc->test_fl = tc->test_fl->next;
         test->next = NULL;
 
-        LINKED_LIST_PUSH (struct test_t, tc->test_stack, test);
+        LINKED_LIST_PUSH (tc->test_stack, test);
     }
 
     str_set (&test->children, "");
@@ -88,7 +88,7 @@ void test_pop (struct test_ctx_t *tc, bool success)
     tc->test_stack = tc->test_stack->next;
     curr_test->next = NULL;
 
-    LINKED_LIST_PUSH (struct test_t, tc->test_fl, curr_test);
+    LINKED_LIST_PUSH (tc->test_fl, curr_test);
 
     if (success) {
         str_cat_c (&curr_test->output, ECMA_GREEN("OK")"\n");

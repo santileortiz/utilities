@@ -2370,6 +2370,8 @@ void strn_set_pooled (mem_pool_t *pool, string_t *str, const char *c_str, size_t
     strn_set (str, c_str, len);
 }
 
+#define str_pool(pool,str) mem_pool_push_cb(pool,destroy_pooled_str,str)
+
 // Flatten an array of null terminated strings into a single string allocated
 // into _pool_ or heap.
 char* collapse_str_arr (char **arr, int n, mem_pool_t *pool)
@@ -3111,6 +3113,8 @@ if (shm_unlink (NAME) == -1) {                                            \
 //      new_my_struct->a = 10;
 //      new_my_struct->f = 5;
 //
+//      struct my_struct_t *head = LINKED_LIST_POP (new_my_struct);
+//
 //      ...
 //
 //      mem_pool_destroy (&pool);
@@ -3133,7 +3137,7 @@ if (shm_unlink (NAME) == -1) {                                            \
     type *head_name;                        \
     type *head_name ## _end;
 
-#define LINKED_LIST_APPEND(type,head_name,node)              \
+#define LINKED_LIST_APPEND(head_name,node)                   \
 {                                                            \
     if (head_name ## _end == NULL) {                         \
         head_name = node;                                    \
@@ -3143,19 +3147,83 @@ if (shm_unlink (NAME) == -1) {                                            \
     head_name ## _end = node;                                \
 }
 
+#define LINKED_LIST_PUSH(head_name,node)                     \
+{                                                            \
+    node->next = head_name;                                  \
+    head_name = node;                                        \
+}
+
+
+// This is O(n) and requres the _end pointer.
+//
+// Discussion:
+//  1) The only way to make this operation O(1) is to ask the user to pass the
+//     parent pointer, but then they most likely will end up doing a O(n)
+//     operation before, or comlicating their code a lot to keep track of it. Or
+//     instead of a linked list using a doubly linked list with a prev pointer
+//     in the nodes.
+//
+//  2) The _end pointer requirement should be optional, but there is no way we
+//     can know if the user defined it or not until build time. For now, I
+//     haven't needed this on lists without _end pointer. When I do, I will need
+//     to create an alternate macro for it.
+#define LINKED_LIST_REMOVE(type,head,node)         \
+{                                                  \
+    /* Find the pointer to node */                 \
+    type **curr_node_ptr = &head;                  \
+    type *curr_node = head;                        \
+    while (*curr_node_ptr != NULL) {               \
+        if (*curr_node_ptr == node) break;         \
+                                                   \
+        curr_node_ptr = &((*curr_node_ptr)->next); \
+        curr_node = curr_node->next;               \
+    }                                              \
+                                                   \
+    /* Update the _end pointer if necessary */     \
+    if (node->next == NULL) {                      \
+        head ## _end = curr_node;                  \
+    }                                              \
+                                                   \
+    /* Remove the node */                          \
+    *curr_node_ptr = node->next;                   \
+    node->next = NULL;                             \
+}
+
+// NOTE: This doesn't update the _end pointer if its being used.
+// TODO: Decide how to handle update of _end pointer. 1) Have a different varion
+// of the macro specific for that like LINKED_LIST_POP_END() or 2) Add an extra
+// macro that updates the end pointer.
+#define LINKED_LIST_POP(head_name)                           \
+head_name;                                                   \
+{                                                            \
+    void *tmp = head_name->next;                             \
+    head_name->next = NULL;                                  \
+    head_name = tmp;                                         \
+}
+
+#define LINKED_LIST_REVERSE(type,head)                       \
+{                                                            \
+    type *curr_node = head;                                  \
+    type *prev_node = NULL;                                  \
+    while (curr_node != NULL) {                              \
+        type *next_node = curr_node->next;                   \
+        curr_node->next = prev_node;                         \
+                                                             \
+        prev_node = curr_node;                               \
+        curr_node = next_node;                               \
+    }                                                        \
+    head = prev_node;                                        \
+}
+
+// These require passing the type of the node struct and a pool.
+
 #define LINKED_LIST_APPEND_NEW(pool,type,head_name,new_node) \
 type *new_node;                                              \
 {                                                            \
     new_node = mem_pool_push_struct(pool,type);              \
     *new_node = ZERO_INIT(type);                             \
                                                              \
-    LINKED_LIST_APPEND(type,head_name,new_node)              \
-}
-
-#define LINKED_LIST_PUSH(type,head_name,node)                \
-{                                                            \
-    node->next = head_name;                                  \
-    head_name = node;                                        \
+    LINKED_LIST_APPEND(head_name,new_node)                   \
 }
 
 #define LINKED_LIST_PUSH_NEW(pool,type,head_name,new_node)   \
@@ -3164,7 +3232,7 @@ type *new_node;                                              \
     new_node = mem_pool_push_struct(pool,type);              \
     *new_node = ZERO_INIT(type);                             \
                                                              \
-    LINKED_LIST_PUSH(type,head_name,new_node)                \
+    LINKED_LIST_PUSH(head_name,new_node)                     \
 }
 
 // TODO: Implement LINKED_LIST_FOR()
@@ -3224,7 +3292,7 @@ void FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)   \
         node = node->NEXT_FIELD;                                    \
     }                                                               \
                                                                     \
-    FUNCNAME ## _arr (arr, n);                                      \
+    FUNCNAME ## _arr_user_data (arr, n, user_data);                 \
                                                                     \
     *head = arr[0];                                                 \
     for (j=0; j<n - 1; j++) {                                       \
