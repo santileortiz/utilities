@@ -3189,16 +3189,29 @@ if (shm_unlink (NAME) == -1) {                                            \
     node->next = NULL;                             \
 }
 
-// NOTE: This doesn't update the _end pointer if its being used.
-// TODO: Decide how to handle update of _end pointer. 1) Have a different varion
-// of the macro specific for that like LINKED_LIST_POP_END() or 2) Add an extra
-// macro that updates the end pointer.
-#define LINKED_LIST_POP(head_name)                           \
-head_name;                                                   \
+// NOTE: This doesn't update the _end pointer if its being used. Use
+// LINKED_LIST_POP_END() in that case.
+#define LINKED_LIST_POP(head)                                \
+head;                                                        \
 {                                                            \
-    void *tmp = head_name->next;                             \
-    head_name->next = NULL;                                  \
-    head_name = tmp;                                         \
+    void *tmp = head->next;                                  \
+    head->next = NULL;                                       \
+    head = tmp;                                              \
+}
+
+// This requires _end pointer.
+// TODO: I'm not sure this is the right way of making the _end pointer
+// requirement optional. It's very easy to forget to use the right POP macro
+// version wnd mess up everything. I wish there was a way to conditionally add
+// or remove code if a symbols exists or not in the context.
+#define LINKED_LIST_POP_END(head)                            \
+head;                                                        \
+{                                                            \
+    if (head == head ## _end) {                              \
+        head ## _end = NULL;                                 \
+    }                                                        \
+                                                             \
+    LINKED_LIST_POP(head)                                    \
 }
 
 #define LINKED_LIST_REVERSE(type,head)                       \
