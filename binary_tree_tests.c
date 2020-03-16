@@ -1,8 +1,6 @@
 /*
  * Copiright (C) 2019 Santiago León O.
  */
-#include "common.h"
-#include "test_logger.c"
 #include "binary_tree.c"
 
 BINARY_TREE_NEW(str_int, char*, int, strcmp(a,b))
@@ -70,18 +68,17 @@ bool get_test_key_list (int i, char ***arr, size_t *arr_len)
     return has_next;
 }
 
-int main (int argc, char **argv)
+void binary_tree_tests (struct test_ctx_t *t)
 {
-    binary_tree_sample ();
-
-    struct test_ctx_t t = {0};
+    test_push (t, "Binary tree");
+    //binary_tree_sample ();
 
     char **arr;
     size_t arr_len;
     for (int key_arr_idx=0; get_test_key_list (key_arr_idx, &arr, &arr_len); key_arr_idx++) {
         printf ("Arr Len: %ld\n", arr_len);
         bool success = true;
-        test_push (&t, "Key arr %d", key_arr_idx);
+        test_push (t, "Key arr %d", key_arr_idx);
 
         struct str_int_tree_t tree = {0};
         for (int i=0; i<arr_len; i++) {
@@ -91,7 +88,7 @@ int main (int argc, char **argv)
         // Test all keys are being iterated
         int num_nodes_interated = 0;
         {
-            test_push (&t, "All nodes are iterated");
+            test_push (t, "All nodes are iterated");
             BINARY_TREE_FOR(str_int, &tree, n)
             {
                 num_nodes_interated++;
@@ -99,15 +96,15 @@ int main (int argc, char **argv)
 
             bool result = num_nodes_interated==arr_len;
             if (!result) {
-                str_set_printf (t.error, "Nodes: %ld, Iterated: %d\n", arr_len, num_nodes_interated);
+                str_set_printf (t->error, "Nodes: %ld, Iterated: %d\n", arr_len, num_nodes_interated);
             }
-            test_pop (&t, result);
+            test_pop (t, result);
             success = success && result;
         }
 
         // Test keys are sorted
         {
-            test_push (&t, "Nodes are iterated in order");
+            test_push (t, "Nodes are iterated in order");
 
             // TODO: There is no get successor functionality right now.
             // Implement this so we don't need the auxiliary array.
@@ -127,17 +124,14 @@ int main (int argc, char **argv)
                 }
             }
 
-            test_pop (&t, result);
+            test_pop (t, result);
             success = success && result;
         }
 
         str_int_tree_destroy (&tree);
 
-        test_pop (&t, success);
+        test_pop (t, success);
     }
 
-    printf ("\n%s", str_data(&t.result));
-    test_ctx_destroy (&t);
-
-    return 0;
+    parent_test_pop (t);
 }

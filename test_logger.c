@@ -14,6 +14,8 @@ struct test_t {
     string_t error;
     string_t children;
 
+    bool children_success;
+
     struct test_t *next;
 };
 
@@ -64,6 +66,7 @@ void test_push (struct test_ctx_t *tc, char *name_format, ...)
         LINKED_LIST_PUSH (tc->test_stack, test);
     }
 
+    test->children_success = true;
     str_set (&test->children, "");
     str_set (&test->error, "");
     tc->error = &test->error;
@@ -90,7 +93,48 @@ void test_pop (struct test_ctx_t *tc, bool success)
 
     LINKED_LIST_PUSH (tc->test_fl, curr_test);
 
+    if (tc->test_stack != NULL) {
+        tc->test_stack->children_success = tc->test_stack->children_success && success;
+    }
+
     if (success) {
+        str_cat_c (&curr_test->output, ECMA_GREEN("OK")"\n");
+    } else {
+        str_cat_c (&curr_test->output, ECMA_RED("FAILED")"\n");
+        str_cat_indented (&curr_test->output, &curr_test->error, TEST_INDENT);
+    }
+
+    if (tc->show_all_children || !success) {
+        str_cat (&curr_test->output, &curr_test->children);
+    }
+
+    if (tc->test_stack) {
+        str_cat_indented (&tc->test_stack->children, &curr_test->output, TEST_INDENT);
+    } else {
+        str_cat (&tc->result, &curr_test->output);
+    }
+}
+
+// This is like test_pop but determines fail/success based on the return status
+// of children. If any children test failed this fails, if all of them passed
+// then this passes.
+//
+// TODO: There is a lot of similarity between this and test_pop() should
+// abstract common functionality.
+void parent_test_pop (struct test_ctx_t *tc)
+{
+    struct test_t *curr_test = tc->test_stack;
+    tc->test_stack = tc->test_stack->next;
+    curr_test->next = NULL;
+
+    LINKED_LIST_PUSH (tc->test_fl, curr_test);
+
+    bool success = curr_test->children_success;
+    if (tc->test_stack != NULL) {
+        tc->test_stack->children_success = tc->test_stack->children_success && success;
+    }
+
+    if (curr_test->children_success) {
         str_cat_c (&curr_test->output, ECMA_GREEN("OK")"\n");
     } else {
         str_cat_c (&curr_test->output, ECMA_RED("FAILED")"\n");

@@ -14,9 +14,6 @@ def default ():
 def tests ():
     ex ('gcc -g -o bin/tests tests.c -lm -lrt')
 
-def binary_tree ():
-    ex ('gcc -Wall -g -o bin/binary_tree binary_tree_tests.c -lm -lrt')
-
 def expand_macro ():
     """
     This is like a preprocessor but we preserve indentation and don't output

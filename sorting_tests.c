@@ -2,104 +2,47 @@
  * Copiright (C) 2019 Santiago León O.
  */
 
-struct my_linked_list_t {
-    int val;
+templ_sort (my_ascending_sort, int, *a < *b);
+templ_sort (my_descending_sort, int, *a > *b);
 
-    struct my_linked_list_t *next;
-};
-
-templ_sort (my_array_sort, int, *a < *b);
-templ_sort_ll (my_linked_list_sort, struct my_linked_list_t, a->val < b->val);
-
-// This could work as part of the linked list API? I think there are cases where
-// we don't want to overwrite the end pointer. Which are these cases? try the
-// example of creating a free list.
-static inline
-void ll_insert_after (struct my_linked_list_t **head,
-                      struct my_linked_list_t **end,
-                      struct my_linked_list_t *new_node)
+void str_cat_array (string_t *str, int *arr, size_t arr_len)
 {
-    assert (end != NULL);
+    str_cat_printf (str, "{");
+    for (int i=0; i<arr_len; i++) {
+        str_cat_printf (str, "%i", arr[i]);
 
-    if (head && *head == NULL) {
-        assert (*end == NULL);
-        *head = new_node;
-        *end = new_node;
-    } else {
-        new_node->next = (*end)->next;
-        (*end)->next = new_node;
-        *end = new_node;
-    }
-}
-
-void my_linked_list_append (mem_pool_t *pool,
-                            struct my_linked_list_t **head,
-                            struct my_linked_list_t **end,
-                            int val)
-{
-    struct my_linked_list_t *new_node =
-        mem_pool_push_struct (pool, struct my_linked_list_t);
-    *new_node = ZERO_INIT(struct my_linked_list_t);
-
-    new_node->val = val;
-
-    ll_insert_after (head, end, new_node);
-}
-
-void my_linked_list_print (struct my_linked_list_t *list)
-{
-    bool is_first = true;
-
-    struct my_linked_list_t *curr_node = list;
-    printf ("[");
-    while (curr_node) {
-        if (is_first) {
-            is_first = false;
-        } else {
-            printf (", ");
+        if (i < arr_len-1) {
+            str_cat_printf (str, ", ");
         }
-
-        printf ("%d", curr_node->val);
-        curr_node = curr_node->next;
     }
-    printf ("]");
-    printf ("\n");
+    str_cat_printf (str, "}\n");
 }
 
-void test_int_values (int *arr, int arr_len)
+bool test_int_array (int *arr, size_t arr_len, string_t *error)
 {
-    if (arr == NULL) return;
+    bool success = true;
+    str_cat_c (error, "Original: ");
+    str_cat_array (error, arr, arr_len);
 
-    mem_pool_t pool = {0};
-
-    printf ("Test values: ");
-    array_print_full (arr, arr_len, ", ", "[", "]\n");
-
-    struct my_linked_list_t *list = NULL, *list_end = NULL;
-    for (int i=0; i<arr_len; i++) {
-        my_linked_list_append (&pool, &list, &list_end, arr[i]);
+    my_ascending_sort (arr, arr_len);
+    for (int i=0; i<arr_len-1; i++) {
+        if (arr[i] > arr[i+1]) {
+            success = false;
+        }
     }
-    printf ("Initial linked list: ");
-    my_linked_list_print (list);
+    str_cat_c (error, "Ascending: ");
+    str_cat_array (error, arr, arr_len);
 
-    my_linked_list_sort (&list, arr_len);
-    printf ("Sorted linked list:  ");
-    my_linked_list_print (list);
-
-    int *array = mem_pool_push_array (&pool, arr_len, int);
-    for (int i=0; i<arr_len; i++) {
-        array[i] = arr[i];
+    my_descending_sort (arr, arr_len);
+    for (int i=0; i<arr_len-1; i++) {
+        if (arr[i] < arr[i+1]) {
+            success = false;
+        }
     }
-    printf ("Initial array: ");
-    array_print_full (array, arr_len, ", ", "[", "]\n");
+    str_cat_c (error, "Descending: ");
+    str_cat_array (error, arr, arr_len);
 
-    my_array_sort (array, arr_len);
-
-    printf ("Sorted array:  ");
-    array_print_full (array, arr_len, ", ", "[", "]\n");
-
-    mem_pool_destroy (&pool);
-    printf ("\n");
+    return success;
 }
 
 struct sort_test_struct_t {
@@ -108,6 +51,8 @@ struct sort_test_struct_t {
 
     struct sort_test_struct_t *next;
 };
+
+templ_sort_ll (linked_list_sort, struct sort_test_struct_t, a->first < b->first);
 
 void str_cat_struct_array (string_t *str, struct sort_test_struct_t *arr, size_t arr_len)
 {
@@ -137,13 +82,36 @@ void str_cat_struct_linked_list (string_t *str, struct sort_test_struct_t *list)
     str_cat_printf (str, "}\n");
 }
 
+bool test_linked_list_sort (struct sort_test_struct_t *list, size_t list_len, string_t *error)
+{
+    bool success = true;
+
+    str_cat_c (error, "Original: ");
+    str_cat_struct_linked_list (error, list);
+
+    linked_list_sort (&list, list_len);
+    struct sort_test_struct_t *curr_node = list;
+    while (curr_node->next != NULL) {
+        if (curr_node->first > curr_node->first) {
+            success = false;
+        }
+
+        curr_node = curr_node->next;
+    }
+
+    str_cat_c (error, "Ascending: ");
+    str_cat_struct_linked_list (error, list);
+
+    return success;
+}
+
 // To see how templ_sort is not stable you can switch the definition of
 // stable_struct_sort() to use the non stable algorithm.
 #if 1
 templ_sort_stable (stable_struct_sort, struct sort_test_struct_t,
                    a->first <= b->first ? (a->first < b->first ? -1 : 0) : 1);
 #else
-templ_sort (stable_struct_sort, struct sort_test_struct_t, a->first = b->first);
+templ_sort (stable_struct_sort, struct sort_test_struct_t, a->first < b->first);
 #endif
 
 bool test_stable_struct_sorting (struct sort_test_struct_t *arr, size_t arr_len, string_t *error)
@@ -310,71 +278,98 @@ bool get_struct_linked_list (mem_pool_t *pool, int i, struct sort_test_struct_t 
     return has_next;
 }
 
-void test_struct_sort ()
+void sorting_tests (struct test_ctx_t *t)
 {
-    struct test_ctx_t t = {0};
+    test_push (t, "Sorting");
+
     mem_pool_t pool = {0};
     mem_pool_marker_t mrkr = mem_pool_begin_temporary_memory (&pool);
 
     {
         bool success = true;
-        test_push (&t, "Stable sort test");
+        test_push (t, "Empty list representations");
+
+        CRASH_TEST(success, t->error,
+            struct sort_test_struct_t *empty_list = NULL;
+            linked_list_sort (&empty_list, 0);
+
+            // Weird cases, ideally we shouldn't get these. Maybe assert on them?
+            // currently we interpret all of these as empty lists.
+            my_ascending_sort (NULL, 0);
+            my_ascending_sort (NULL, 10);
+            linked_list_sort (NULL, 0);
+            linked_list_sort (NULL, -1);
+            linked_list_sort (NULL, 10);
+        )
+        test_pop (t, success);
+    }
+
+
+    {
+        test_push (t, "Array sorting (int)");
+
+        int *arr;
+        size_t arr_len = 0;
+        for (int i=0; get_test_array(&pool, i, &arr, &arr_len); i++) {
+            test_push (t, "arr%d", i);
+            bool test_result = test_int_array (arr, arr_len, t->error);
+            test_pop (t, test_result);
+
+            mem_pool_end_temporary_memory (mrkr);
+        }
+
+        parent_test_pop (t);
+    }
+
+    {
+        test_push (t, "Linked List sorting");
+
+        struct sort_test_struct_t *arr;
+        size_t arr_len = 0;
+        for (int i=0; get_struct_linked_list(&pool, i, &arr, &arr_len); i++) {
+            test_push (t, "arr%d", i);
+            bool test_result = test_linked_list_sort (arr, arr_len, t->error);
+            test_pop (t, test_result);
+
+            mem_pool_end_temporary_memory (mrkr);
+        }
+
+        parent_test_pop (t);
+    }
+
+    {
+        test_push (t, "Stable sort test");
 
         struct sort_test_struct_t *arr;
         size_t arr_len = 0;
         for (int i=0; get_struct_array(&pool, i, &arr, &arr_len); i++) {
-            test_push (&t, "arr%d", i);
-            bool test_result = test_stable_struct_sorting (arr, arr_len, t.error);
-            test_pop (&t, test_result);
+            test_push (t, "arr%d", i);
+            bool test_result = test_stable_struct_sorting (arr, arr_len, t->error);
+            test_pop (t, test_result);
 
-            success = success && test_result;
             mem_pool_end_temporary_memory (mrkr);
         }
 
-        test_pop (&t, success);
+        parent_test_pop (t);
     }
 
     {
-        bool success = true;
-        test_push (&t, "Stable linked list sort test");
+        test_push (t, "Stable linked list sort test");
 
         struct sort_test_struct_t *list;
         size_t list_len;
         for (int i=0; get_struct_linked_list(&pool, i, &list, &list_len); i++) {
-            test_push (&t, "arr%d", i);
-            bool test_result = test_stable_linked_list_struct_sorting (list, list_len, t.error);
-            test_pop (&t, test_result);
+            test_push (t, "arr%d", i);
+            bool test_result = test_stable_linked_list_struct_sorting (list, list_len, t->error);
+            test_pop (t, test_result);
 
-            success = success && test_result;
             mem_pool_end_temporary_memory (mrkr);
         }
 
-        test_pop (&t, success);
+        parent_test_pop (t);
     }
 
-    printf ("%s", str_data(&t.result));
-
     mem_pool_destroy (&pool);
-    test_ctx_destroy (&t);
-}
 
-void sorting_tests ()
-{
-    int test_values[] = {10, 3, 5, 20, 1};
-
-    test_int_values (test_values, ARRAY_SIZE(test_values));
-    test_int_values (test_values, 0);
-
-    struct my_linked_list_t *empty_list = NULL;
-    my_linked_list_sort (&empty_list, 0);
-
-    // Weird cases, ideally we shouldn't get these. Maybe assert on them?
-    // currently we interpret all of these as empty lists.
-    my_array_sort (NULL, 0);
-    my_array_sort (NULL, 10);
-    my_linked_list_sort (NULL, 0);
-    my_linked_list_sort (NULL, -1);
-    my_linked_list_sort (NULL, 10);
-
-    test_struct_sort ();
+    parent_test_pop (t);
 }

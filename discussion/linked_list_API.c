@@ -87,4 +87,45 @@ void iterate_list_examples () {
     while (
 }
 
+// Previously in sorting_tests.c we used the following code. I'm puting it here
+// for historical reasons, but now that I look at it, it seems a bit
+// overcomplicated, the new LINKED_LIST_* macros seem much more clean.
+//
+//                                                - Santiago, 15 March 2019
+
+// This could work as part of the linked list API? I think there are cases where
+// we don't want to overwrite the end pointer. Which are these cases? try the
+// example of creating a free list.
+static inline
+void ll_insert_after (struct my_linked_list_t **head,
+                      struct my_linked_list_t **end,
+                      struct my_linked_list_t *new_node)
+{
+    assert (end != NULL);
+
+    if (head && *head == NULL) {
+        assert (*end == NULL);
+        *head = new_node;
+        *end = new_node;
+    } else {
+        new_node->next = (*end)->next;
+        (*end)->next = new_node;
+        *end = new_node;
+    }
+}
+
+void my_linked_list_append (mem_pool_t *pool,
+                            struct my_linked_list_t **head,
+                            struct my_linked_list_t **end,
+                            int val)
+{
+    struct my_linked_list_t *new_node =
+        mem_pool_push_struct (pool, struct my_linked_list_t);
+    *new_node = ZERO_INIT(struct my_linked_list_t);
+
+    new_node->val = val;
+
+    ll_insert_after (head, end, new_node);
+}
+
 
