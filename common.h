@@ -18,6 +18,7 @@
 #include <stdarg.h>
 #include <dirent.h>
 #include <locale.h>
+#include <float.h>
 
 #ifdef __cplusplus
 #define ZERO_INIT(type) (type){}
@@ -102,6 +103,7 @@ size_t size;                                              \
 #define ECMA_MAGENTA(str) "\033[1;35m\033[K"str"\033[m\033[K"
 #define ECMA_CYAN(str) "\033[1;36m\033[K"str"\033[m\033[K"
 #define ECMA_WHITE(str) "\033[1;37m\033[K"str"\033[m\033[K"
+#define ECMA_BOLD(str) "\033[1m\033[K"str"\033[m\033[K"
 
 ////////////
 // STRINGS
@@ -3153,40 +3155,45 @@ if (shm_unlink (NAME) == -1) {                                            \
     head_name = node;                                        \
 }
 
-
 // This is O(n) and requres the _end pointer.
 //
 // Discussion:
 //  1) The only way to make this operation O(1) is to ask the user to pass the
-//     parent pointer, but then they most likely will end up doing a O(n)
-//     operation before, or comlicating their code a lot to keep track of it. Or
-//     instead of a linked list using a doubly linked list with a prev pointer
-//     in the nodes.
+//     parent pointer. The user will either have to do a O(n) operation before
+//     to compute it, or complicate their code to keep track of the parent
+//     pointer. A better solution would be to use a doubly linked list that
+//     stores prev pointers in the nodes, instead of a linked list.
 //
 //  2) The _end pointer requirement should be optional, but there is no way we
 //     can know if the user defined it or not until build time. For now, I
 //     haven't needed this on lists without _end pointer. When I do, I will need
 //     to create an alternate macro for it.
+//
+// TODO: Take a look at the trick in
+// https://gist.github.com/santileortiz/9a5c60a545d01a70dc1d9a631b9fca40 see if
+// it's useful to make the _end pointer optional.
 #define LINKED_LIST_REMOVE(type,head,node)         \
 {                                                  \
     /* Find the pointer to node */                 \
     type **curr_node_ptr = &head;                  \
     type *curr_node = head;                        \
-    while (*curr_node_ptr != NULL) {               \
+    while (curr_node != NULL) {                    \
         if (*curr_node_ptr == node) break;         \
                                                    \
         curr_node_ptr = &((*curr_node_ptr)->next); \
         curr_node = curr_node->next;               \
     }                                              \
                                                    \
-    /* Update the _end pointer if necessary */     \
-    if (node->next == NULL) {                      \
-        head ## _end = curr_node;                  \
-    }                                              \
+    /*if (curr_node == node) {                       \*/\
+        /* Update the _end pointer if necessary */ \
+        if ((node)->next == NULL) {                \
+            head ## _end = curr_node;              \
+        }                                          \
                                                    \
-    /* Remove the node */                          \
-    *curr_node_ptr = node->next;                   \
-    node->next = NULL;                             \
+        /* Remove the node */                      \
+        *curr_node_ptr = (node)->next;             \
+        (node)->next = NULL;                       \
+    /*}                                              \*/\
 }
 
 // NOTE: This doesn't update the _end pointer if its being used. Use
@@ -3211,7 +3218,9 @@ head;                                                        \
         head ## _end = NULL;                                 \
     }                                                        \
                                                              \
-    LINKED_LIST_POP(head)                                    \
+    void *tmp = head->next;                                  \
+    head->next = NULL;                                       \
+    head = tmp;                                              \
 }
 
 #define LINKED_LIST_REVERSE(type,head)                       \
@@ -3278,12 +3287,13 @@ type *new_node;                                              \
         c = IS_A_LT_B;                                        \
     }
 
-// TODO: Receive the end pointer and update it. Allow it to be NULL.
+// NOTE: The generated sorting function returns the last node of the linked list
+// so the user can update it if needed.
 #define _linked_list_sort_implementation(FUNCNAME,TYPE,NEXT_FIELD)  \
-void FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)   \
+TYPE* FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)  \
 {                                                                   \
     if (head == NULL || n == 0) {                                   \
-        return;                                                     \
+        return NULL;                                                \
     }                                                               \
                                                                     \
     if (n == -1) {                                                  \
@@ -3312,10 +3322,12 @@ void FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)   \
         arr[j]->NEXT_FIELD = arr[j+1];                              \
     }                                                               \
     arr[j]->NEXT_FIELD = NULL;                                      \
+                                                                    \
+    return arr[n-1];                                                \
 }                                                                   \
                                                                     \
-void FUNCNAME(TYPE **head, int n) {                                 \
-    FUNCNAME ## _user_data (head,n,NULL);                           \
+TYPE* FUNCNAME(TYPE **head, int n) {                                \
+    return FUNCNAME ## _user_data (head,n,NULL);                    \
 }
 
 // Linked list sorting

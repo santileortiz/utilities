@@ -7,6 +7,7 @@
 
 #include "string_tests.c"
 #include "memory_pool_tests.c"
+#include "linked_list_tests.c"
 #include "sorting_tests.c"
 #include "binary_tree_tests.c"
 
@@ -25,6 +26,8 @@ int main (int argc, char **argv)
     // TODO: Add these to test logger
     string_tests ();
     printf ("\n");
+
+    linked_list_tests (&t);
 
     sorting_tests (&t);
 

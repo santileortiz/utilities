@@ -12,7 +12,7 @@ def default ():
     call_user_function(target)
 
 def tests ():
-    ex ('gcc -g -o bin/tests tests.c -lm -lrt')
+    ex ('gcc -Wall -g -o bin/tests tests.c -lm -lrt')
 
 def expand_macro ():
     """

@@ -92,7 +92,7 @@ bool test_linked_list_sort (struct sort_test_struct_t *list, size_t list_len, st
     linked_list_sort (&list, list_len);
     struct sort_test_struct_t *curr_node = list;
     while (curr_node->next != NULL) {
-        if (curr_node->first > curr_node->first) {
+        if (curr_node->first > curr_node->next->first) {
             success = false;
         }
 
@@ -132,7 +132,6 @@ bool test_stable_struct_sorting (struct sort_test_struct_t *arr, size_t arr_len,
 
 
     if (success) {
-        int curr_first = arr[0].first;
         for (int i=0; i<arr_len-1; i++) {
             if (arr[i].first == arr[i+1].first) {
                 if (arr[i].second > arr[i+1].second) {
