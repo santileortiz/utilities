@@ -191,23 +191,25 @@ void linked_list_tests (struct test_ctx_t *t)
 
     // TODO: Check appending an item from an other list
     // TODO: Check pushing an item from an other list
+    struct my_linked_list_t *a_node = NULL;
+    int start_id = 200;
+    for (int i=0; i<num_elements; i++) {
+        LINKED_LIST_PUSH_NEW (&pool, struct my_linked_list_t, linked_list_a, new_node);
+        if (i == num_elements/2) {
+            a_node = new_node;
+        }
+        new_node->id = i+start_id;
+    }
+
     if (success) {
         test_push (t, "Remove item in other list");
 
-        struct my_linked_list_t *tmp_list = {0};
-        LINKED_LIST_PUSH_NEW (&pool, struct my_linked_list_t, tmp_list, it_1);
-        it_1->id = 200;
-        LINKED_LIST_PUSH_NEW (&pool, struct my_linked_list_t, tmp_list, it_2);
-        it_2->id = 201;
-        LINKED_LIST_PUSH_NEW (&pool, struct my_linked_list_t, tmp_list, it_3);
-        it_3->id = 202;
-
         CRASH_TEST_AND_RUN(success, t->error,
-            LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, tmp_list);
+            LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, a_node);
         );
 
         success = my_linked_list_check (linked_list_c, 0, num_elements-1, t->error); 
-        success = my_linked_list_check (tmp_list, 202, 200, t->error); 
+        success = my_linked_list_check (linked_list_a, start_id+num_elements-1, start_id, t->error); 
 
         test_pop (t, success);
     }
