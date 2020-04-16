@@ -10,30 +10,107 @@ struct my_linked_list_t {
     struct my_linked_list_t *next;
 };
 
+bool check_list_size (struct my_linked_list_t *list, int expected_num_elements, int *node_count, string_t *error)
+{
+    bool success = true;
+
+    int node_cnt = 0;
+    struct my_linked_list_t *curr_node = list;
+    while (curr_node != NULL) {
+        node_cnt++;
+        curr_node = curr_node->next;
+    }
+    if (node_cnt != expected_num_elements) {
+        str_cat_printf (error, "List has %d elements, expected %d.\n", node_cnt, expected_num_elements);
+        success = false;
+    }
+
+    if (node_count != NULL) {
+        *node_count = node_cnt;
+    }
+
+    return success;
+}
+
 bool my_linked_list_check (struct my_linked_list_t *list, int start_id, int end_id, string_t *error)
 {
     bool success = true;
 
+    bool ascending;
     int expected_num_elements;
     if (start_id < end_id) {
         expected_num_elements = end_id - start_id + 1;
+        ascending = true;
     } else {
         expected_num_elements = start_id - end_id + 1;
+        ascending = false;
     }
 
-    // Check the number of elements
-    {
-        int node_cnt = 0;
+    int node_cnt;
+    success = check_list_size (list, expected_num_elements, &node_cnt, error);
+    if (!success) {
+        // Print an informative error message with details about the expected
+        // and actual list.
+
+        int max_elements_to_print = 8;
+        str_cat_printf (error, "[");
+        if (expected_num_elements > max_elements_to_print) {
+            int elements_per_edge = max_elements_to_print/2;
+
+            int i;
+            for (i=0; i < elements_per_edge; i++) {
+                int id = ascending ? start_id + i : start_id - i;
+                str_cat_printf (error, "%d, ", id);
+            }
+
+            str_cat_printf (error, "..., ");
+
+            for (i=elements_per_edge-1; i > 0; i--) {
+                int id = ascending ? end_id - i : end_id + i;
+                str_cat_printf (error, "%d, ", id);
+            }
+            str_cat_printf (error, "%d", end_id + i);
+
+        } else {
+            int i;
+            for (i=0; i < expected_num_elements-1; i++) {
+                str_cat_printf (error, "%d, ", start_id + i);
+            }
+            str_cat_printf (error, "%d", start_id + i);
+        }
+
+        str_cat_printf (error, "] != [");
+
+        int node_idx = 0;
         struct my_linked_list_t *curr_node = list;
-        while (curr_node != NULL) {
-            node_cnt++;
+        while (curr_node->next != NULL) {
+            // NOTE: The order of these conditions is important.
+            if (node_idx < max_elements_to_print/2) {
+                str_cat_printf (error, "%d, ", curr_node->id);
+
+            } else if (node_idx > node_cnt - max_elements_to_print/2 - 1) {
+                str_cat_printf (error, "%d, ", curr_node->id);
+
+            } else if (node_idx == expected_num_elements - 1) {
+                str_cat_printf (error, "(%d), ", curr_node->id);
+
+            } else if (node_idx == expected_num_elements - 2 || node_idx == expected_num_elements) {
+                str_cat_printf (error, "%d, ", curr_node->id);
+
+            } else if (node_idx == max_elements_to_print/2) {
+                str_cat_printf (error, "..., ");
+
+            } else if (node_cnt > expected_num_elements &&
+                       node_idx == node_cnt - max_elements_to_print/2 - 1) {
+                str_cat_printf (error, "..., ");
+            }
+
+            node_idx++;
             curr_node = curr_node->next;
         }
-        if (node_cnt != expected_num_elements) {
-            str_cat_printf (error, "List has %d elements, expected %d.\n", node_cnt, expected_num_elements);
-            // TODO: Print the ids of the first and last extra elements
-            success = false;
-        }
+        str_cat_printf (error, "%d]\n", curr_node->id);
+
+        success = false;
     }
 
     // Check the ids of elements
@@ -54,6 +131,56 @@ bool my_linked_list_check (struct my_linked_list_t *list, int start_id, int end_
             } else {
                 expected_id--;
             }
+            node_cnt++;
+            curr_node = curr_node->next;
+        }
+    }
+
+    return success;
+}
+
+bool my_linked_list_check_skip (struct my_linked_list_t *list, int start_id, int end_id, int id_to_skip,
+                                string_t *error)
+{
+    bool success = true;
+
+    int expected_num_elements;
+    if (start_id < end_id) {
+        expected_num_elements = end_id - start_id;
+    } else {
+        expected_num_elements = start_id - end_id;
+    }
+
+    success = check_list_size (list, expected_num_elements, NULL, error);
+
+    // Check the ids of elements
+    {
+        bool ascending = start_id < end_id;
+        int expected_id = start_id;
+        int node_cnt = 0;
+        struct my_linked_list_t *curr_node = list;
+        while (curr_node != NULL && node_cnt < expected_num_elements) {
+            if (expected_id != id_to_skip) {
+                if (expected_id != curr_node->id) {
+                    str_cat_printf (error, "Expected id=%d but got id=%d.\n", expected_id, curr_node->id);
+                    success = false;
+                    break;
+                }
+
+            } else {
+                if (ascending) {
+                    expected_id++;
+                } else {
+                    expected_id--;
+                }
+            }
+
+            if (ascending) {
+                expected_id++;
+            } else {
+                expected_id--;
+            }
+
             node_cnt++;
             curr_node = curr_node->next;
         }
@@ -105,7 +232,9 @@ void linked_list_tests (struct test_ctx_t *t)
                 str_cat_printf (t->error, "Computed ID sum is %d, expected %d.\n", node_id_sum, expected_id_sum);
                 success = false;
             }
+        }
 
+        if (success) {
             success = my_linked_list_check (linked_list_a, num_elements-1, 0, t->error); 
         }
 
@@ -130,12 +259,12 @@ void linked_list_tests (struct test_ctx_t *t)
             }
         );
 
-        if (success) {
-            if (linked_list_a != NULL) {
-                str_cat_printf (t->error, "Expected linked_list_a to be empty.\n");
-                success = false;
-            }
+        if (success && linked_list_a != NULL) {
+            str_cat_printf (t->error, "Expected linked_list_a to be empty.\n");
+            success = false;
+        }
 
+        if (success) {
             success = my_linked_list_check (linked_list_b, 0, num_elements-1, t->error); 
         }
 
@@ -161,12 +290,12 @@ void linked_list_tests (struct test_ctx_t *t)
             }
         );
 
-        if (success) {
-            if (linked_list_b != NULL) {
-                str_cat_printf (t->error, "Expected linked_list_b to be empty.\n");
-                success = false;
-            }
+        if (success && linked_list_b != NULL) {
+            str_cat_printf (t->error, "Expected linked_list_b to be empty.\n");
+            success = false;
+        }
 
+        if (success) {
             success = my_linked_list_check (linked_list_c, 0, num_elements-1, t->error); 
         }
 
@@ -182,15 +311,13 @@ void linked_list_tests (struct test_ctx_t *t)
             LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, &node_not_in_list);
         );
 
-        success = my_linked_list_check (linked_list_c, 0, num_elements-1, t->error); 
+        if (success) {
+            success = my_linked_list_check (linked_list_c, 0, num_elements-1, t->error);
+        }
 
         test_pop (t, success);
     }
 
-    // TODO: Check that LINKED_LIST_REMOVE() actually removes the passed node
-
-    // TODO: Check appending an item from an other list
-    // TODO: Check pushing an item from an other list
     struct my_linked_list_t *a_node = NULL;
     int start_id = 200;
     for (int i=0; i<num_elements; i++) {
@@ -208,8 +335,94 @@ void linked_list_tests (struct test_ctx_t *t)
             LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, a_node);
         );
 
-        success = my_linked_list_check (linked_list_c, 0, num_elements-1, t->error); 
-        success = my_linked_list_check (linked_list_a, start_id+num_elements-1, start_id, t->error); 
+        if (success) {
+            success = my_linked_list_check (linked_list_c, 0, num_elements-1, t->error);
+        }
+
+        if (success) {
+            success = my_linked_list_check (linked_list_a, start_id+num_elements-1, start_id, t->error);
+        }
+
+        test_pop (t, success);
+    }
+
+    // NOTE: Pushing or appending elements that are already in other list is
+    // problematic. There is no way we can know the node belongs somewhere else
+    // and we wouldn't know the head of the other list, which makes it
+    // impossible to remove it from the other list. What most likely will happen
+    // is it will join both lists. Maybe this behavior is not expected and what
+    // we would really like is to assert if the user pushes an element where
+    // next is not NULL, but still, it could be the end of another list. I'm
+    // thinking if the user is getting a lot of these problems, then they should
+    // better use a doubly linked list.
+
+    if (success) {
+        test_push (t, "Remove first element");
+
+        CRASH_TEST_AND_RUN(success, t->error,
+            LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, linked_list_c);
+        );
+
+        if (success) {
+            success = my_linked_list_check (linked_list_c, 1, num_elements-1, t->error);
+        }
+
+        test_pop (t, success);
+    }
+
+    if (success) {
+        test_push (t, "Remove last element");
+
+        CRASH_TEST_AND_RUN(success, t->error,
+            LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, linked_list_c_end);
+        );
+
+        if (success && linked_list_c_end->id != num_elements-2) {
+            str_cat_printf (t->error, "End pointer of linked_list_c has id=%d, expected %d.\n",
+                            linked_list_c_end->id, num_elements-2);
+            success = false;
+        }
+
+        if (success) {
+            success = my_linked_list_check (linked_list_c, 1, num_elements-2, t->error);
+        }
+
+        test_pop (t, success);
+    }
+
+    if (success) {
+        test_push (t, "Remove middle element");
+
+        struct my_linked_list_t *middle_element = linked_list_c;
+        while (middle_element->id != num_elements/2) {
+            middle_element = middle_element->next;
+        }
+
+        CRASH_TEST_AND_RUN(success, t->error,
+            LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, middle_element);
+        );
+
+        if (success) {
+            success = my_linked_list_check_skip (linked_list_c, 1, num_elements-2, middle_element->id, t->error);
+        }
+
+        test_pop (t, success);
+    }
+
+    if (success) {
+        test_push (t, "Remove until end");
+
+        CRASH_TEST_AND_RUN(success, t->error,
+            while (linked_list_c != NULL) {
+                LINKED_LIST_REMOVE (struct my_linked_list_t, linked_list_c, linked_list_c);
+            }
+        );
+
+        if (success && linked_list_c_end != NULL) {
+            str_cat_printf (t->error, "End pointer of linked_list_c has id=%d, expected NULL pointer.\n",
+                            linked_list_c_end->id);
+            success = false;
+        }
 
         test_pop (t, success);
     }

@@ -3177,23 +3177,25 @@ if (shm_unlink (NAME) == -1) {                                            \
     /* Find the pointer to node */                 \
     type **curr_node_ptr = &head;                  \
     type *curr_node = head;                        \
+    type *prev_node = NULL;                        \
     while (curr_node != NULL) {                    \
         if (*curr_node_ptr == node) break;         \
                                                    \
         curr_node_ptr = &((*curr_node_ptr)->next); \
+        prev_node = curr_node;                     \
         curr_node = curr_node->next;               \
     }                                              \
                                                    \
-    /*if (curr_node == node) {                       \*/\
+    if (curr_node == node) {                       \
         /* Update the _end pointer if necessary */ \
-        if ((node)->next == NULL) {                \
-            head ## _end = curr_node;              \
+        if ((curr_node)->next == NULL) {           \
+            head ## _end = prev_node;              \
         }                                          \
                                                    \
         /* Remove the node */                      \
-        *curr_node_ptr = (node)->next;             \
-        (node)->next = NULL;                       \
-    /*}                                              \*/\
+        *curr_node_ptr = (curr_node)->next;        \
+        (curr_node)->next = NULL;                  \
+    }                                              \
 }
 
 // NOTE: This doesn't update the _end pointer if its being used. Use
