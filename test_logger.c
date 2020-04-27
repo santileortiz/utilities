@@ -29,11 +29,14 @@ struct test_ctx_t {
     string_t result;
 
     string_t *error;
+    bool last_test_success;
 
     // By default results of child tests are only shown if the parent test
     // failed. If the following is true, then all child test results will be
     // show.
     bool show_all_children;
+
+    bool disable_colors;
 
     struct test_t *test_stack;
 
@@ -85,11 +88,16 @@ void test_push (struct test_ctx_t *tc, char *name_format, ...)
     }
 }
 
+// TODO: Maybe move to common.h?
+#define OPT_COLOR(runtime_condition,color_macro,string) \
+    ((runtime_condition) ? color_macro(string) : string)
+
 void test_pop (struct test_ctx_t *tc, bool success)
 {
     struct test_t *curr_test = tc->test_stack;
     tc->test_stack = tc->test_stack->next;
     curr_test->next = NULL;
+    tc->last_test_success = success;
 
     LINKED_LIST_PUSH (tc->test_fl, curr_test);
 
@@ -98,13 +106,17 @@ void test_pop (struct test_ctx_t *tc, bool success)
     }
 
     if (success) {
-        str_cat_c (&curr_test->output, ECMA_GREEN("OK")"\n");
+        str_cat_printf (&curr_test->output, "%s\n",
+                        OPT_COLOR(!tc->disable_colors, ECMA_GREEN, "OK"));
     } else {
-        str_cat_c (&curr_test->output, ECMA_RED("FAILED")"\n");
-        str_cat_indented (&curr_test->output, &curr_test->error, TEST_INDENT);
+        str_cat_printf (&curr_test->output, "%s\n",
+                        OPT_COLOR(!tc->disable_colors, ECMA_RED, "FAILED"));
     }
 
     if (tc->show_all_children || !success) {
+        str_cat_indented (&curr_test->output, &curr_test->error, TEST_INDENT);
+        // TODO: Should this be indented?
+        // :indented_children_cat
         str_cat (&curr_test->output, &curr_test->children);
     }
 
@@ -118,38 +130,9 @@ void test_pop (struct test_ctx_t *tc, bool success)
 // This is like test_pop but determines fail/success based on the return status
 // of children. If any children test failed this fails, if all of them passed
 // then this passes.
-//
-// TODO: There is a lot of similarity between this and test_pop() should
-// abstract common functionality.
 void parent_test_pop (struct test_ctx_t *tc)
 {
-    struct test_t *curr_test = tc->test_stack;
-    tc->test_stack = tc->test_stack->next;
-    curr_test->next = NULL;
-
-    LINKED_LIST_PUSH (tc->test_fl, curr_test);
-
-    bool success = curr_test->children_success;
-    if (tc->test_stack != NULL) {
-        tc->test_stack->children_success = tc->test_stack->children_success && success;
-    }
-
-    if (curr_test->children_success) {
-        str_cat_c (&curr_test->output, ECMA_GREEN("OK")"\n");
-    } else {
-        str_cat_c (&curr_test->output, ECMA_RED("FAILED")"\n");
-        str_cat_indented (&curr_test->output, &curr_test->error, TEST_INDENT);
-    }
-
-    if (tc->show_all_children || !success) {
-        str_cat (&curr_test->output, &curr_test->children);
-    }
-
-    if (tc->test_stack) {
-        str_cat_indented (&tc->test_stack->children, &curr_test->output, TEST_INDENT);
-    } else {
-        str_cat (&tc->result, &curr_test->output);
-    }
+    test_pop (tc, tc->test_stack->children_success);
 }
 
 #define CRASH_SAFE_TEST_SHARED_VARIABLE_NAME "TEST_CRASH_SAFE_success"
@@ -192,6 +175,7 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
     return res;
 }
 
+#if !defined TEST_NO_SUBPROCESS
 #define CRASH_TEST(SUCCESS,OUTPUT,CODE)                                                                 \
 {                                                                                                       \
     char *__crash_safe_stdout_fname = "tmp_stdout";                                                     \
@@ -219,3 +203,9 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
     if (SUCCESS) {                               \
         CODE                                     \
     }
+
+#else
+#define CRASH_TEST(SUCCESS,OUTPUT,CODE) CODE
+#define CRASH_TEST_AND_RUN(SUCCESS,OUTPUT,CODE) CODE
+
+#endif
