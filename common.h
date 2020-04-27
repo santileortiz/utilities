@@ -2297,6 +2297,15 @@ void mem_pool_end_temporary_memory (mem_pool_marker_t mrkr)
     }
 }
 
+// The idea of this is to allow chaining multiple pools so we only need to
+// delete the parent one.
+ON_DESTROY_CALLBACK(pool_chain_destroy)
+{
+    mem_pool_destroy(clsr);
+}
+
+#define mem_pool_add_child(pool,child_pool) mem_pool_push_cb(pool, pool_chain_destroy, child_pool)
+
 // pom == pool or malloc
 #define pom_push_struct(pool, type) pom_push_size(pool, sizeof(type))
 #define pom_push_array(pool, n, type) pom_push_size(pool, (n)*sizeof(type))
@@ -3349,6 +3358,43 @@ _linked_list_sort_implementation(FUNCNAME,TYPE,NEXT_FIELD)
 
 #define templ_sort_stable_ll(FUNCNAME,TYPE,CMP_A_TO_B) \
     templ_sort_stable_ll_next_field(FUNCNAME,TYPE,next,CMP_A_TO_B)
+
+///////////////////
+//
+//  DYNAMIC ARRAY
+//
+ON_DESTROY_CALLBACK (pooled_free_call)
+{
+    free (clsr);
+}
+
+#define DYNAMIC_ARRAY_INIT(pool, head_name)             \
+    mem_pool_push_cb(pool, pooled_free_call, head_name)
+
+// TODO: Should we get this as an argument of each macro that can initialize the
+// array?.
+#define DYNAMIC_ARRAY_INITIAL_SIZE 50
+
+#define DYNAMIC_ARRAY_APPEND(head_name,element)                             \
+{                                                                           \
+    size_t new_size = 0;                                                    \
+    if (0 == head_name ## _size) {                                          \
+        new_size = DYNAMIC_ARRAY_INITIAL_SIZE;                              \
+    } else if (head_name ## _size == head_name ## _len) {                   \
+        new_size = 2*(head_name ## _size);                                  \
+    }                                                                       \
+                                                                            \
+    if (new_size != 0) {                                                    \
+        void *new_head =                                                    \
+            realloc(head_name, new_size*sizeof(head_name));                 \
+        if (new_head) {                                                     \
+            head_name = new_head;                                           \
+            head_name ## _size = new_size;                                  \
+        }                                                                   \
+    }                                                                       \
+                                                                            \
+    (head_name)[(head_name ## _len)++] = element;                           \
+}
 
 #define COMMON_H
 #endif
