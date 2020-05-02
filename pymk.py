@@ -14,6 +14,9 @@ def default ():
 def tests ():
     ex ('gcc -Wall -g -o bin/tests tests.c -lm -lrt')
 
+def linear_solver_usage ():
+    ex ('gcc -Wall -g -o bin/linear_solver linear_solver_usage.c -lm -lrt')
+
 def expand_macro ():
     """
     This is like a preprocessor but we preserve indentation and don't output
