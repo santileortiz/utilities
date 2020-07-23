@@ -5,7 +5,8 @@
 #define BINARY_TREE_NEW(PREFIX,KEY_TYPE,VALUE_TYPE,CMP_A_TO_B)                                           \
                                                                                                          \
 struct PREFIX ## _tree_t {                                                                               \
-    mem_pool_t pool;                                                                                     \
+    mem_pool_t _pool;                                                                                    \
+    mem_pool_t *pool;                                                                                    \
                                                                                                          \
     uint32_t num_nodes;                                                                                  \
                                                                                                          \
@@ -24,15 +25,19 @@ struct PREFIX ## _tree_node_t {                                                 
                                                                                                          \
 void PREFIX ## _tree_destroy (struct PREFIX ## _tree_t *tree)                                            \
 {                                                                                                        \
-    mem_pool_destroy (&tree->pool);                                                                      \
+    /*Only destroy our own pool*/                                                                        \
+    mem_pool_destroy (&tree->_pool);                                                                     \
 }                                                                                                        \
                                                                                                          \
 struct PREFIX ## _tree_node_t* PREFIX ## _tree_allocate_node (struct PREFIX ## _tree_t *tree)            \
 {                                                                                                        \
+    /*If pool pointer is null we use our own pool, the user must call _destroy*/                         \
+    if (tree->pool == NULL) tree->pool = &tree->_pool;                                                   \
+                                                                                                         \
     /* TODO: When we add removal of nodes, this should allocate them from a free
     list of nodes.*/                                                                                     \
     struct PREFIX ## _tree_node_t *new_node =                                                            \
-        mem_pool_push_struct (&tree->pool, struct PREFIX ## _tree_node_t);                               \
+        mem_pool_push_struct (tree->pool, struct PREFIX ## _tree_node_t);                                \
     *new_node = ZERO_INIT(struct PREFIX ## _tree_node_t);                                                \
     return new_node;                                                                                     \
 }                                                                                                        \
