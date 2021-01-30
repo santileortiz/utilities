@@ -1,5 +1,5 @@
 /*
- * Copiright (C) 2019 Santiago León O.
+ * Copyright (C) 2019 Santiago León O.
  */
 
 struct my_linked_list_t {

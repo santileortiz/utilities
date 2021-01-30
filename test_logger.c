@@ -1,5 +1,5 @@
 /*
- * Copiright (C) 2020 Santiago León O.
+ * Copyright (C) 2020 Santiago León O.
  */
 
 // These are required for the CRASH_TEST() and CRASH_TEST_AND_RUN() macros.
