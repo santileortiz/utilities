@@ -42,6 +42,10 @@ typedef enum {false, true} bool;
 #define CLAMP(a,lower,upper) ((a)>(upper)?(upper):((a)<(lower)?(lower):(a)))
 #endif
 
+#if !defined(SIGN)
+#define SIGN(a) ((a)<0?-1:1)
+#endif
+
 #define WRAP(a,lower,upper) ((a)>(upper)?(lower):((a)<(lower)?(upper):(a)))
 
 #define LOW_CLAMP(a,lower) ((a)<(lower)?(lower):(a))
@@ -223,7 +227,11 @@ typedef union {
 
 #define str_is_small(string) (!((string)->len_small&0x01))
 #define str_len(string) (str_is_small(string)?(string)->len_small/2:(string)->len)
-#define str_data(string) (str_is_small(string)?(string)->str_small:(string)->str)
+static inline
+char* str_data(string_t *str)
+{
+    return (str_is_small(str)?(str)->str_small:(str)->str);
+}
 
 static inline
 char* str_small_alloc (string_t *str, size_t len)
@@ -2460,6 +2468,24 @@ char* abs_path (const char *path, mem_pool_t *pool)
     return absolute_path;
 }
 
+//:sh_expand_was_a_bad_idea
+char* abs_path_no_sh_expand (const char *path, mem_pool_t *pool)
+{
+    mem_pool_t l_pool = {0};
+
+    char *absolute_path_m = realpath (path, NULL);
+    if (absolute_path_m == NULL) {
+        // NOTE: realpath() fails if the file does not exist.
+        printf ("Error: %s (%d)\n", strerror(errno), errno);
+    }
+    char *absolute_path = pom_strdup (pool, absolute_path_m);
+    free (absolute_path_m);
+
+    mem_pool_destroy (&l_pool);
+
+    return absolute_path;
+}
+
 void file_write (int file, void *pos,  ssize_t size)
 {
     if (write (file, pos, size) < size) {
@@ -2513,10 +2539,19 @@ bool full_file_write (const void *data, ssize_t size, const char *path)
     return failed;
 }
 
-char* full_file_read (mem_pool_t *pool, const char *path)
+// TODO: Go back to the more user friendly name full_file_read() instead of
+// full_file_read_full() and remove the do_sh_expand parameter defaulting to
+// false. This needs to be done after we are sure no applications are expecting
+// sh_expand() to be called here.
+char* full_file_read_full (mem_pool_t *pool, const char *path, uint64_t *len, bool do_sh_expand)
 {
     bool success = true;
-    char *dir_path = sh_expand (path, NULL);
+    const char *dir_path = path;
+    char *expanded_path = NULL;
+    if (do_sh_expand) {
+        expanded_path = sh_expand (path, NULL);
+        dir_path = expanded_path;
+    }
 
     mem_pool_marker_t mrk;
     if (pool != NULL) {
@@ -2541,6 +2576,11 @@ char* full_file_read (mem_pool_t *pool, const char *path)
                 bytes_read += status;
             } while (bytes_read != st.st_size);
             loaded_data[st.st_size] = '\0';
+
+            if (len != NULL) {
+                *len = st.st_size;
+            }
+
             close (file);
         } else {
             success = false;
@@ -2563,9 +2603,35 @@ char* full_file_read (mem_pool_t *pool, const char *path)
         }
     }
 
-    free (dir_path);
+    if (expanded_path != NULL) {
+        free (expanded_path);
+    }
     return retval;
 }
+
+//DEPRECATED
+// This will cause an API break. I now think calling sh_expand() inside of
+// full_file_read() is a mistake. It's prone to let the user invoke bash
+// unknowingly. A better solution is to require the caller to always use
+// absolute paths.
+//
+// We should also allow the caller to get the length of the file by default, and
+// support NULL if they don't care about it.
+//
+// Changing this causes an API break so for now we create this wrapper, but we
+// should replace
+//
+//   full_file_read(pool, path) -> full_file_read_full(pool, path, NULL, false)
+//
+// A quick fix is to uncomment the following wrapper, but the real solution is
+// to perform the refactoring above so the code does not assume sh_expand() will
+// be called when loading the file.
+//
+//:sh_expand_was_a_bad_idea
+//char* full_file_read (mem_pool_t *pool, const char *path)
+//{
+//    return full_file_read_full (pool, path, NULL, true);
+//}
 
 char* full_file_read_prefix (mem_pool_t *out_pool, const char *path, char **prefix, int len)
 {
@@ -2632,31 +2698,78 @@ char* full_file_read_prefix (mem_pool_t *out_pool, const char *path, char **pref
     return retval;
 }
 
-bool path_exists (char *path)
+//DEPRECATED
+//:sh_expand_was_a_bad_idea
+//bool path_exists (char *path)
+//{
+//    bool retval = true;
+//    char *dir_path = sh_expand (path, NULL);
+//
+//    struct stat st;
+//    int status;
+//    if ((status = stat(dir_path, &st)) == -1) {
+//        retval = false;
+//        if (errno != ENOENT) {
+//            printf ("Error checking existance of %s: %s\n", path, strerror(errno));
+//        }
+//    }
+//    free (dir_path);
+//    return retval;
+//}
+
+//DEPRECATED
+//:sh_expand_was_a_bad_idea
+//bool dir_exists (char *path)
+//{
+//    bool retval = true;
+//    char *dir_path = sh_expand (path, NULL);
+//
+//    struct stat st;
+//    int status;
+//    if ((status = stat(dir_path, &st)) == -1) {
+//        retval = false;
+//        if (errno != ENOENT) {
+//            printf ("Error checking existance of %s: %s\n", path, strerror(errno));
+//        }
+//
+//    } else {
+//        if (!S_ISDIR(st.st_mode)) {
+//            return false;
+//        }
+//    }
+//
+//    free (dir_path);
+//    return retval;
+//}
+
+// TODO: Always calling sh_expand() turns out to be a very bad idea, because it's very
+// common to have paths that contain () in them. I think a better default is to
+// just assume paths are absolute at this point. Users can call sh_expand()
+// explicitly but we don't hide that inside of these calls.
+//:sh_expand_was_a_bad_idea
+bool path_exists_no_sh_expand (char *path)
 {
     bool retval = true;
-    char *dir_path = sh_expand (path, NULL);
 
     struct stat st;
     int status;
-    if ((status = stat(dir_path, &st)) == -1) {
+    if ((status = stat(path, &st)) == -1) {
         retval = false;
         if (errno != ENOENT) {
             printf ("Error checking existance of %s: %s\n", path, strerror(errno));
         }
     }
-    free (dir_path);
     return retval;
 }
 
-bool dir_exists (char *path)
+//:sh_expand_was_a_bad_idea
+bool dir_exists_no_sh_expand (char *path)
 {
     bool retval = true;
-    char *dir_path = sh_expand (path, NULL);
 
     struct stat st;
     int status;
-    if ((status = stat(dir_path, &st)) == -1) {
+    if ((status = stat(path, &st)) == -1) {
         retval = false;
         if (errno != ENOENT) {
             printf ("Error checking existance of %s: %s\n", path, strerror(errno));
@@ -2668,7 +2781,6 @@ bool dir_exists (char *path)
         }
     }
 
-    free (dir_path);
     return retval;
 }
 
@@ -2838,6 +2950,9 @@ char* change_extension (mem_pool_t *pool, char *path, char *new_ext)
     return res;
 }
 
+// NOTE: This correctly handles a filename like hi.autosave.repl where there are
+// multiple parts that would look like an extensions. Only the last one will be
+// removed.
 char* remove_extension (mem_pool_t *pool, char *path)
 {
     size_t end_pos = strlen(path)-1;
