@@ -2503,16 +2503,50 @@ void file_read (int file, void *pos,  ssize_t size)
     }
 }
 
+// DEPRECATED
+//bool full_file_write (const void *data, ssize_t size, const char *path)
+//{
+//    bool failed = false;
+//    char *dir_path = sh_expand (path, NULL);
+//
+//    // TODO: If writing fails, we will leave a blank file behind. We should make
+//    // a backup in case things go wrong.
+//    int file = open (dir_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+//    if (file != -1) {
+//        int bytes_written = 0;
+//        do {
+//            int status = write (file, data, size);
+//            if (status == -1) {
+//                printf ("Error writing %s: %s\n", path, strerror(errno));
+//                failed = true;
+//                break;
+//            }
+//            bytes_written += status;
+//        } while (bytes_written != size);
+//        close (file);
+//
+//    } else {
+//        failed = true;
+//        if (errno != EACCES) {
+//            // If we don't have permissions fail silently so that the caller can
+//            // detect this with errno and maybe retry.
+//            printf ("Error opening %s: %s\n", path, strerror(errno));
+//        }
+//    }
+//
+//    free (dir_path);
+//    return failed;
+//}
+
 // NOTE: If path does not exist, it will be created. If it does, it will be
 // overwritten.
-bool full_file_write (const void *data, ssize_t size, const char *path)
+bool full_file_write_no_sh_expand (const void *data, ssize_t size, const char *path)
 {
     bool failed = false;
-    char *dir_path = sh_expand (path, NULL);
 
     // TODO: If writing fails, we will leave a blank file behind. We should make
     // a backup in case things go wrong.
-    int file = open (dir_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    int file = open (path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if (file != -1) {
         int bytes_written = 0;
         do {
@@ -2535,7 +2569,6 @@ bool full_file_write (const void *data, ssize_t size, const char *path)
         }
     }
 
-    free (dir_path);
     return failed;
 }
 
@@ -2632,71 +2665,6 @@ char* full_file_read_full (mem_pool_t *pool, const char *path, uint64_t *len, bo
 //{
 //    return full_file_read_full (pool, path, NULL, true);
 //}
-
-char* full_file_read_prefix (mem_pool_t *out_pool, const char *path, char **prefix, int len)
-{
-    mem_pool_t pool = {0};
-    string_t pfx_s = {0};
-    string_t path_s = str_new (path);
-    char *dir_path = sh_expand (path, &pool);
-
-    int status, i = 0;
-    struct stat st;
-    while ((status = (stat(dir_path, &st) == -1)) && i < len) {
-        if (errno == ENOENT && prefix != NULL && *prefix != NULL) {
-            str_set (&pfx_s, prefix[i]);
-            assert (str_last(&pfx_s) == '/');
-            str_cat (&pfx_s, &path_s);
-            dir_path = sh_expand (str_data(&pfx_s), &pool);
-            i++;
-        } else {
-            break;
-        }
-    }
-    str_free (&pfx_s);
-    str_free (&path_s);
-
-    mem_pool_marker_t mrk;
-    if (out_pool != NULL) {
-        mrk = mem_pool_begin_temporary_memory (out_pool);
-    }
-
-    bool success = true;
-    char *loaded_data = NULL;
-    if (status == 0) {
-        loaded_data = (char*)pom_push_size (out_pool, st.st_size + 1);
-
-        int file = open (dir_path, O_RDONLY);
-        int bytes_read = 0;
-        do {
-            int status = read (file, loaded_data+bytes_read, st.st_size-bytes_read);
-            if (status == -1) {
-                success = false;
-                printf ("Error reading %s: %s\n", path, strerror(errno));
-                break;
-            }
-            bytes_read += status;
-        } while (bytes_read != st.st_size);
-        loaded_data[st.st_size] = '\0';
-    } else {
-        success = false;
-        printf ("Could not locate %s in any folder.\n", path);
-    }
-
-    char *retval = NULL;
-    if (success) {
-        retval = loaded_data;
-    } else if (loaded_data != NULL) {
-        if (out_pool != NULL) {
-            mem_pool_end_temporary_memory (mrk);
-        } else {
-            free (loaded_data);
-        }
-    }
-
-    mem_pool_destroy (&pool);
-    return retval;
-}
 
 // TODO: Always calling sh_expand() turns out to be a very bad idea, because it's very
 // common to have paths that contain () in them. I think a better default is to
@@ -2833,18 +2801,17 @@ bool ensure_dir_exists_no_sh_expand (char *path)
 // to create all directories required for it to exist. If path ends in / then
 // all components are checked, otherwise the last part after / is assumed to be
 // a filename and is not created as a directory.
-bool ensure_path_exists (const char *path)
+bool ensure_path_exists_no_sh_expand (char *path)
 {
     bool success = true;
-    char *dir_path = sh_expand (path, NULL);
 
-    char *c = dir_path;
+    char *c = path;
     if (*c == '/') {
         c++;
     }
 
     struct stat st;
-    if (stat(dir_path, &st) == -1) {
+    if (stat(path, &st) == -1) {
         if (errno == ENOENT) {
             while (*c && success) {
                 while (*c && *c != '/') {
@@ -2853,10 +2820,10 @@ bool ensure_path_exists (const char *path)
 
                 if (*c != '\0') {
                     *c = '\0';
-                    if (stat(dir_path, &st) == -1 && errno == ENOENT) {
-                        if (mkdir (dir_path, 0777) == -1) {
+                    if (stat(path, &st) == -1 && errno == ENOENT) {
+                        if (mkdir (path, 0777) == -1) {
                             success = false;
-                            printf ("Error creating %s: %s\n", dir_path, strerror (errno));
+                            printf ("Error creating %s: %s\n", path, strerror (errno));
                         }
                     }
 
@@ -2873,9 +2840,53 @@ bool ensure_path_exists (const char *path)
         // file or directory?.
     }
 
-    free (dir_path);
     return success;
 }
+
+// DEPRECATED
+//bool ensure_path_exists (const char *path)
+//{
+//    bool success = true;
+//    char *dir_path = sh_expand (path, NULL);
+//
+//    char *c = dir_path;
+//    if (*c == '/') {
+//        c++;
+//    }
+//
+//    struct stat st;
+//    if (stat(dir_path, &st) == -1) {
+//        if (errno == ENOENT) {
+//            while (*c && success) {
+//                while (*c && *c != '/') {
+//                    c++;
+//                }
+//
+//                if (*c != '\0') {
+//                    *c = '\0';
+//                    if (stat(dir_path, &st) == -1 && errno == ENOENT) {
+//                        if (mkdir (dir_path, 0777) == -1) {
+//                            success = false;
+//                            printf ("Error creating %s: %s\n", dir_path, strerror (errno));
+//                        }
+//                    }
+//
+//                    *c = '/';
+//                    c++;
+//                }
+//            }
+//        } else {
+//            success = false;
+//            printf ("Error ensuring path for %s: %s\n", path, strerror(errno));
+//        }
+//    } else {
+//        // Path exists. Maybe check if it's the same type as on path, either
+//        // file or directory?.
+//    }
+//
+//    free (dir_path);
+//    return success;
+//}
 
 bool read_dir (DIR *dirp, struct dirent **res)
 {
@@ -3172,7 +3183,7 @@ bool download_file (const char *url, char *path)
 
         if( status != HTTP_STATUS_FAILED )
         {
-            full_file_write (request->response_data, request->response_size, path);
+            full_file_write_no_sh_expand (request->response_data, request->response_size, path);
         } else {
             printf( "HTTP request failed (%d): %s.\n", request->status_code, request->reason_phrase );
             success = false;
