@@ -691,7 +691,7 @@ bool is_end_of_line (const char *c)
 // Set POSIX locale while storing the previous one. Useful while calling strtod
 // and you know the decimal separator will always be '.', and you don't want it
 // to break if the user changes locale.
-// NOTE: Must be followed by a call to end_posix_locale() to avoid memory leaks
+// NOTE: Must be followed by a call to restore_locale() to avoid memory leaks
 char* begin_posix_locale ()
 {
     char *old_locale = NULL;
@@ -703,7 +703,7 @@ char* begin_posix_locale ()
 }
 
 // Restore the previous locale returned by begin_posix_locale
-void end_posix_locale (char *old_locale)
+void restore_locale (char *old_locale)
 {
     setlocale (LC_ALL, old_locale);
     free (old_locale);
@@ -3405,9 +3405,27 @@ type *new_node;                                              \
     LINKED_LIST_PUSH(head_name,new_node)                     \
 }
 
+// This macro requires the passed type parameter to be a pointer. I had another
+// version of this macro that turned a normal type to a pointer type internally
+// (appended *). I found I always passed a pointer type so I was getting a
+// double pointer in the end. The best mnemonic I've found is to think of this
+// macro like a foreach loop in other languages like java where you declare the
+// full type of the variable that will be iterated on. This old macro has the
+// same issue as *_ptr typedefs some people use.
+//
+// TODO: Can we check at compile time that type is a pointer? Right now if users
+// forget the *, they get a long list of errors. Maybe a static assert would
+// show a nicer error message?.
+#define LINKED_LIST_FOR(type, varname,headname)              \
+type varname = headname;                                     \
+for (; varname != NULL; varname = varname->next)
+
+/*
+//@DEPRECATED
 #define LINKED_LIST_FOR(type, varname,headname)              \
 type *varname = headname;                                    \
 for (; varname != NULL; varname = varname->next)
+*/
 
 // Linked list sorting
 //
