@@ -550,6 +550,7 @@ void printf_indented (char *str, int num_spaces)
 
 char str_last (string_t *str)
 {
+    assert (str_len(str) > 0);
     return str_data(str)[str_len(str)-1];
 }
 
@@ -2449,19 +2450,33 @@ char* sh_expand (const char *str, mem_pool_t *pool)
     return res;
 }
 
+// We require absolute paths in all path handling functions, so this is likely
+// to be the first function to be called on a string that represents a path.
+// Because real path needs to traverse folders to resolve "..", this fails if
+// the path does not exist. Then... what is the point of having separate
+// *_exists() functions?. I think the useful thing about those is for times when
+// we already know a path is absolute and we need to make multiple tests. But
+// for a single sequence of abs_path() followed by path_exists(), we can use
+// abs_path()'s result.
+//
+// TODO: This function should probably also set a boolean value that tells the
+// caller if there was a file not found error.
 char* abs_path (const char *path, mem_pool_t *pool)
 {
     mem_pool_t l_pool = {0};
 
     char *expanded_path = sh_expand (path, &l_pool);
 
+    char *absolute_path = NULL;
     char *absolute_path_m = realpath (expanded_path, NULL);
     if (absolute_path_m == NULL) {
         // NOTE: realpath() fails if the file does not exist.
-        printf ("Error: %s (%d)\n", strerror(errno), errno);
+        //printf ("Error: %s (%d)\n", strerror(errno), errno);
+
+    } else {
+        absolute_path = pom_strdup (pool, absolute_path_m);
+        free (absolute_path_m);
     }
-    char *absolute_path = pom_strdup (pool, absolute_path_m);
-    free (absolute_path_m);
 
     mem_pool_destroy (&l_pool);
 
@@ -2673,6 +2688,8 @@ char* full_file_read_full (mem_pool_t *pool, const char *path, uint64_t *len, bo
 //:sh_expand_was_a_bad_idea
 bool path_exists_no_sh_expand (char *path)
 {
+    if (path == NULL) return false;
+
     bool retval = true;
 
     struct stat st;
@@ -2708,6 +2725,8 @@ bool path_exists_no_sh_expand (char *path)
 //:sh_expand_was_a_bad_idea
 bool dir_exists_no_sh_expand (char *path)
 {
+    if (path == NULL) return false;
+
     bool retval = true;
 
     struct stat st;
