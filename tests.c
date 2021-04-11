@@ -2,10 +2,13 @@
  * Copyright (C) 2019 Santiago León O.
  */
 
+#define TEST_NO_SUBPROCESS
+
 #include "common.h"
 #include "test_logger.c"
 
 #include "string_tests.c"
+#include "path_tests.c"
 #include "memory_pool_tests.c"
 #include "linked_list_tests.c"
 #include "sorting_tests.c"
@@ -26,6 +29,8 @@ int main (int argc, char **argv)
     // TODO: Add these to test logger
     string_tests ();
     printf ("\n");
+
+    path_tests (&t);
 
     linked_list_tests (&t);
 

@@ -152,13 +152,13 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
     }
 
     if (!*success) {
-        char *stdout_str = full_file_read_full (pool, stdout_fname, NULL, false);
+        char *stdout_str = full_file_read (pool, stdout_fname, NULL);
         if (*stdout_str != '\0') {
             str_cat_c (result, ECMA_CYAN("stdout:\n"));
             str_cat_indented_c (result, stdout_str, 2);
         }
 
-        char *stderr_str = full_file_read_full (pool, stderr_fname, NULL, false);
+        char *stderr_str = full_file_read (pool, stderr_fname, NULL);
         if (*stderr_str != '\0') {
             str_cat_c (result, ECMA_CYAN("stderr:\n"));
             str_cat_indented_c (result, stderr_str, 2);
