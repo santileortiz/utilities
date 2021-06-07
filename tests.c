@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "test_logger.c"
+#include "datetime.c"
 
 #include "string_tests.c"
 #include "path_tests.c"
@@ -13,6 +14,7 @@
 #include "linked_list_tests.c"
 #include "sorting_tests.c"
 #include "binary_tree_tests.c"
+#include "datetime_tests.c"
 
 // TODO: Add a CLI to select which tests get executed and which ones don't.
 // TODO: Make tests silent and return true on success, on fail concatenate
@@ -26,9 +28,7 @@ int main (int argc, char **argv)
     memory_pool_tests ();
     printf ("\n");
 
-    // TODO: Add these to test logger
-    string_tests ();
-    printf ("\n");
+    string_tests (&t);
 
     path_tests (&t);
 
@@ -37,6 +37,8 @@ int main (int argc, char **argv)
     sorting_tests (&t);
 
     binary_tree_tests (&t);
+
+    datetime_tests (&t);
 
     printf ("\n%s", str_data(&t.result));
     test_ctx_destroy (&t);

@@ -599,6 +599,31 @@ _define_str_printf_func(str_cat_printf, strn_cat_c)
 
 #undef _define_str_printf_func
 
+// NOTE: Caller must be sure src is null termintated and dst has the correct
+// length allocated.
+int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
+{
+    assert (src != NULL && dst != NULL);
+
+    int replacement_cnt = 0;
+
+    while (*src != '\0') {
+        if (*src == target) {
+            replacement_cnt++;
+            *dst = replacement;
+        } else {
+            *dst = *src;
+        }
+
+        src++;
+        dst++;
+    }
+
+    *dst = '\0';
+
+    return replacement_cnt;
+}
+
 //////////////////////
 // PARSING UTILITIES
 //
@@ -2391,6 +2416,59 @@ void strn_set_pooled (mem_pool_t *pool, string_t *str, const char *c_str, size_t
 }
 
 #define str_pool(pool,str) mem_pool_push_cb(pool,destroy_pooled_str,str)
+
+// Based on stb_dupreplace() inside stb.h
+char *cstr_dupreplace(mem_pool_t *pool, char *src, char *find, char *replace, int *count)
+{
+   size_t len_find = strlen(find);
+   size_t len_replace = strlen(replace);
+   int count_l = 0;
+
+   char *s,*p,*q;
+
+   s = strstr(src, find);
+   if (s == NULL) {
+       if (count != NULL) *count = 0;
+       return pom_strdup(pool, src);
+   }
+
+   do {
+      ++count_l;
+      s = strstr(s + len_find, find);
+   } while (s != NULL);
+   if (count != NULL) *count = count_l;
+
+   p = pom_push_size (pool, strlen(src) + count_l * (len_replace - len_find) + 1);
+   if (p == NULL) return p;
+   q = p;
+   s = src;
+   for (;;) {
+      char *t = strstr(s, find);
+      if (t == NULL) {
+         strncpy(q,s,strlen(src)+count_l*(len_replace-len_find)+1);
+         assert(strlen(p) == strlen(src) + count_l*(len_replace-len_find));
+         return p;
+      }
+      memcpy(q, s, t-s);
+      q += t-s;
+      memcpy(q, replace, len_replace);
+      q += len_replace;
+      s = t + len_find;
+   }
+}
+
+char* cstr_rstrip (char *str)
+{
+    size_t len = strlen(str);
+    if (len > 0) {
+        char *end = str + len - 1;
+        while (*end != '\0' && *end == ' ') {
+            *end = '\0';
+            end--;
+        }
+    }
+    return str;
+}
 
 // Flatten an array of null terminated strings into a single string allocated
 // into _pool_ or heap.
