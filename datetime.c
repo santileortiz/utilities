@@ -160,46 +160,6 @@ bool date_scanner_char (struct date_scanner_t *scnr, char c)
     return false;
 }
 
-void date_scan_numeric_offset (struct date_scanner_t *scnr,
-                               bool *is_set_time_offset, int *time_offset_hour, int *time_offset_minute)
-{
-    if (date_scanner_char (scnr, '+') || date_scanner_char (scnr, '-')) {
-        *is_set_time_offset = true;
-
-        bool is_negative = *(scnr->pos - 1) == '-';
-
-        if (!scnr->is_eof) {
-            date_scanner_int (scnr, time_offset_hour);
-            if (is_negative) *time_offset_hour = -(*time_offset_hour);
-        }
-
-        if (!scnr->is_eof) {
-            if (date_scanner_char (scnr, ':')) {
-                date_scanner_int (scnr, time_offset_minute);
-            }
-        }
-
-        // Following section 4.3. of RFC3339, interpret -00:00 as unknown
-        // offset to UTC.
-        if (is_negative && *time_offset_hour == 0 && *time_offset_minute == 0)
-        {
-            *is_set_time_offset = false;
-        }
-    }
-}
-
-void backtrack_and_scan_offset (struct date_scanner_t *scnr, char *date_time_str,
-                                bool *is_set_time_offset, int *time_offset_hour, int *time_offset_minute)
-{
-    while (scnr->pos >= date_time_str && *(scnr->pos) != '-') scnr->pos--;
-
-    date_scan_numeric_offset (scnr, is_set_time_offset, time_offset_hour, time_offset_minute);
-    if (!scnr->is_eof)
-    {
-        // Something after offset, error...
-    }
-}
-
 bool date_read (char *date_time_str, struct date_t *date)
 {
     assert (date_time_str != NULL && date != NULL);
@@ -228,10 +188,6 @@ bool date_read (char *date_time_str, struct date_t *date)
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '-')) {
             date_scanner_int (&scnr, &day);
-
-        } else if (date_scanner_char (&scnr, ':')) {
-            month = -1;
-            backtrack_and_scan_offset (&scnr, date_time_str, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
         }
     }
 
@@ -239,10 +195,6 @@ bool date_read (char *date_time_str, struct date_t *date)
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, ' ') || date_scanner_char (&scnr, 'T') || date_scanner_char (&scnr, 't')) {
             date_scanner_int (&scnr, &hour);
-
-        } else if (date_scanner_char (&scnr, ':')) {
-            day = -1;
-            backtrack_and_scan_offset (&scnr, date_time_str, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
         }
     }
 
@@ -273,7 +225,29 @@ bool date_read (char *date_time_str, struct date_t *date)
             is_set_time_offset = true;
 
         } else {
-            date_scan_numeric_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
+            if (date_scanner_char (&scnr, '+') || date_scanner_char (&scnr, '-')) {
+                is_set_time_offset = true;
+
+                bool is_negative = *(scnr.pos - 1) == '-';
+
+                if (!scnr.is_eof) {
+                    date_scanner_int (&scnr, &time_offset_hour);
+                    if (is_negative) time_offset_hour = -time_offset_hour;
+                }
+
+                if (!scnr.is_eof) {
+                    if (date_scanner_char (&scnr, ':')) {
+                        date_scanner_int (&scnr, &time_offset_minute);
+                    }
+                }
+
+                // Following section 4.3. of RFC3339, interpret -00:00 as unknown
+                // offset to UTC.
+                if (is_negative && time_offset_hour == 0 && time_offset_minute == 0)
+                {
+                    is_set_time_offset = false;
+                }
+            }
         }
     }
 
