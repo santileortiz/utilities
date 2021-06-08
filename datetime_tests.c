@@ -2,14 +2,32 @@
  * Copyright (C) 2021 Santiago León O.
  */
 
+void invalid_date_read_test (struct test_ctx_t *t, char *date_str)
+{
+    bool success = true;
+    struct date_t res = {0};
+
+    test_push (t, "'%s' (invalid)", date_str);
+    bool is_valid = date_read (date_str, &res);
+    if (is_valid) {
+        str_cat_printf (t->error, "Date should be invalid but isn't.\n");
+        success = false;
+    }
+    test_pop (t, success);
+}
+
 void date_read_test_single (struct test_ctx_t *t, char *date_str, struct date_t *expected)
 {
     bool success = true;
     struct date_t res = {0};
 
     test_push (t, "'%s'", date_str);
-    date_read (date_str, &res);
-    if (date_cmp (&res, expected) != 0) {
+    bool is_valid = date_read (date_str, &res);
+    if (!is_valid) {
+        str_cat_printf (t->error, "Valid date marked as invalid.\n");
+        success = false;
+
+    } else if (date_cmp (&res, expected) != 0) {
         str_cat_printf (t->error, "Wrong parsing of '%s':\n", date_str);
         str_date_internal (t->error, &res, expected);
         success = false;

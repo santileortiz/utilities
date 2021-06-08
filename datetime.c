@@ -54,10 +54,93 @@ struct date_t {
 struct date_scanner_t {
     char *pos;
     bool is_eof;
+    int len;
 
     bool error;
     char *error_message;
 };
+
+void date_scanner_set_error (struct date_scanner_t *scnr, char *error_message)
+{
+    // Only set this the first time the function is called. Knowing the first
+    // error message is more useful than the last.
+    if (!scnr->error) {
+        scnr->error = true;
+        scnr->error_message = error_message;
+    }
+}
+
+void date_scanner_parse_error (struct date_scanner_t *scnr)
+{
+    date_scanner_set_error (scnr, "date has invalid format.");
+}
+
+bool date_scanner_int (struct date_scanner_t *scnr, int32_t *value)
+{
+    assert (value != NULL);
+    if (scnr->error) return false;
+
+    if (!isdigit (*scnr->pos)) return false;
+
+    char *start = scnr->pos;
+    char *end;
+    int res = strtol (scnr->pos, &end, 10);
+    if (scnr->pos != end) {
+        *value = res;
+        scnr->pos = end;
+
+        if (*scnr->pos == '\0') {
+            scnr->is_eof = true;
+        }
+
+        scnr->len = end - start;
+        return true;
+    }
+
+    return false;
+}
+
+bool date_scanner_double (struct date_scanner_t *scnr, double *value)
+{
+    assert (value != NULL);
+    if (scnr->error) return false;
+
+    char *start = scnr->pos;
+    char *end;
+    double res = strtod (scnr->pos, &end);
+    if (scnr->pos != end) {
+        *value = res;
+        scnr->pos = end;
+
+        if (*scnr->pos == '\0') {
+            scnr->is_eof = true;
+        }
+
+        scnr->len = end - start;
+        return true;
+    }
+
+    return false;
+}
+
+bool date_scanner_char (struct date_scanner_t *scnr, char c)
+{
+    if (scnr->error) return false;
+
+    if (*scnr->pos == c) {
+        scnr->pos++;
+
+        if (*scnr->pos == '\0') {
+            scnr->is_eof = true;
+        }
+
+        scnr->len = 1;
+        return true;
+    }
+
+    return false;
+}
+
 
 void date_set (struct date_t *d,
                int year, int month, int day,
@@ -101,63 +184,47 @@ void str_date_internal (string_t *str, struct date_t *d, struct date_t *expected
     (expected != NULL && d->time_offset_minute != expected->time_offset_minute) ?  str_cat_printf (str, " (expected %d)\n", expected->time_offset_minute) : str_cat_printf (str, "\n");
 }
 
-bool date_scanner_int (struct date_scanner_t *scnr, int32_t *value)
+bool date_scan_utc_offset (struct date_scanner_t *scnr,
+                           bool *is_set_time_offset, int *time_offset_hour, int *time_offset_minute)
 {
-    assert (value != NULL);
-    if (scnr->error) return false;
+    bool success = true;
 
-    if (!isdigit (*scnr->pos)) return false;
+    if (date_scanner_char (scnr, 'Z') || date_scanner_char (scnr, 'z')) {
+        *is_set_time_offset = true;
 
-    char *end;
-    int res = strtol (scnr->pos, &end, 10);
-    if (scnr->pos != end) {
-        *value = res;
-        scnr->pos = end;
+    } else if (date_scanner_char (scnr, '+') || date_scanner_char (scnr, '-')) {
+        *is_set_time_offset = true;
 
-        if (*scnr->pos == '\0') {
-            scnr->is_eof = true;
+        bool is_negative = *(scnr->pos - 1) == '-';
+
+        if (!scnr->is_eof) {
+            date_scanner_int (scnr, time_offset_hour);
+            if (is_negative) *time_offset_hour = -(*time_offset_hour);
         }
-        return true;
+
+        if (!scnr->is_eof) {
+            if (date_scanner_char (scnr, ':')) {
+                date_scanner_int (scnr, time_offset_minute);
+            }
+        }
+
+        // Following section 4.3. of RFC3339, interpret -00:00 as unknown
+        // offset to UTC.
+        if (is_negative && *time_offset_hour == 0 && *time_offset_minute == 0)
+        {
+            *is_set_time_offset = false;
+        }
+
+    } else {
+        success = false;
     }
 
-    return false;
+    return success;
 }
 
-bool date_scanner_double (struct date_scanner_t *scnr, double *value)
+bool scan_time_separator (struct date_scanner_t *scnr)
 {
-    assert (value != NULL);
-    if (scnr->error) return false;
-
-    char *end;
-    double res = strtod (scnr->pos, &end);
-    if (scnr->pos != end) {
-        *value = res;
-        scnr->pos = end;
-
-        if (*scnr->pos == '\0') {
-            scnr->is_eof = true;
-        }
-        return true;
-    }
-
-    return false;
-}
-
-bool date_scanner_char (struct date_scanner_t *scnr, char c)
-{
-    if (scnr->error) return false;
-
-    if (*scnr->pos == c) {
-        scnr->pos++;
-
-        if (*scnr->pos == '\0') {
-            scnr->is_eof = true;
-        }
-
-        return true;
-    }
-
-    return false;
+    return date_scanner_char (scnr, ' ') || date_scanner_char (scnr, 'T') || date_scanner_char (scnr, 't');
 }
 
 bool date_read (char *date_time_str, struct date_t *date)
@@ -173,14 +240,23 @@ bool date_read (char *date_time_str, struct date_t *date)
 
     int32_t year;
     date_scanner_int (&scnr, &year);
-    if (scnr.pos - date_time_str != 4) {
-        // Non 4 digit year...
+    if (scnr.len < 4) {
+        date_scanner_set_error (&scnr, "Year must be at least 4 digits.");
     }
 
     int32_t month = -1;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '-')) {
             date_scanner_int (&scnr, &month);
+            if (scnr.len > 2) {
+                date_scanner_set_error (&scnr, "Month must be at most 2 digits.");
+            }
+
+        } else if (scan_time_separator (&scnr)) {
+            date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
+
+        } else {
+            date_scanner_parse_error (&scnr);
         }
     }
 
@@ -188,13 +264,28 @@ bool date_read (char *date_time_str, struct date_t *date)
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '-')) {
             date_scanner_int (&scnr, &day);
+            if (scnr.len > 2) {
+                date_scanner_set_error (&scnr, "Day must be at most 2 digits.");
+            }
+
+        } else if (scan_time_separator (&scnr)) {
+            date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
+
+        } else {
+            date_scanner_parse_error (&scnr);
         }
     }
 
     int32_t hour = -1;
     if (!scnr.is_eof) {
-        if (date_scanner_char (&scnr, ' ') || date_scanner_char (&scnr, 'T') || date_scanner_char (&scnr, 't')) {
+        if (scan_time_separator (&scnr)) {
             date_scanner_int (&scnr, &hour);
+            if (scnr.len > 2) {
+                date_scanner_set_error (&scnr, "Hour must be at most 2 digits.");
+            }
+
+        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+            date_scanner_parse_error (&scnr);
         }
     }
 
@@ -202,6 +293,12 @@ bool date_read (char *date_time_str, struct date_t *date)
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, ':')) {
             date_scanner_int (&scnr, &minute);
+            if (scnr.len > 2) {
+                date_scanner_set_error (&scnr, "Minute must be at most 2 digits.");
+            }
+
+        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+            date_scanner_parse_error (&scnr);
         }
     }
 
@@ -209,6 +306,12 @@ bool date_read (char *date_time_str, struct date_t *date)
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, ':')) {
             date_scanner_int (&scnr, &second);
+            if (scnr.len > 2) {
+                date_scanner_set_error (&scnr, "Second must be at most 2 digits.");
+            }
+
+        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+            date_scanner_parse_error (&scnr);
         }
     }
 
@@ -217,38 +320,14 @@ bool date_read (char *date_time_str, struct date_t *date)
         if (date_scanner_char (&scnr, '.')) {
             scnr.pos--;
             date_scanner_double (&scnr, &second_fraction);
+
+        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+            date_scanner_parse_error (&scnr);
         }
     }
 
     if (!scnr.is_eof) {
-        if (date_scanner_char (&scnr, 'Z') || date_scanner_char (&scnr, 'z')) {
-            is_set_time_offset = true;
-
-        } else {
-            if (date_scanner_char (&scnr, '+') || date_scanner_char (&scnr, '-')) {
-                is_set_time_offset = true;
-
-                bool is_negative = *(scnr.pos - 1) == '-';
-
-                if (!scnr.is_eof) {
-                    date_scanner_int (&scnr, &time_offset_hour);
-                    if (is_negative) time_offset_hour = -time_offset_hour;
-                }
-
-                if (!scnr.is_eof) {
-                    if (date_scanner_char (&scnr, ':')) {
-                        date_scanner_int (&scnr, &time_offset_minute);
-                    }
-                }
-
-                // Following section 4.3. of RFC3339, interpret -00:00 as unknown
-                // offset to UTC.
-                if (is_negative && time_offset_hour == 0 && time_offset_minute == 0)
-                {
-                    is_set_time_offset = false;
-                }
-            }
-        }
+        date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
     }
 
     if (!scnr.error) {
