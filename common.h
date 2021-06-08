@@ -2462,7 +2462,7 @@ char* cstr_rstrip (char *str)
     size_t len = strlen(str);
     if (len > 0) {
         char *end = str + len - 1;
-        while (*end != '\0' && *end == ' ') {
+        while (end >= str && *end != '\0' && *end == ' ') {
             *end = '\0';
             end--;
         }
