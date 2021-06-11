@@ -2,13 +2,37 @@
  * Copyright (C) 2021 Santiago León O.
  */
 
+void different_date_compare_test (struct test_ctx_t *t, char *test_name, struct date_t *d1, struct date_t *d2)
+{
+    bool success = true;
+    test_push (t, "%s", test_name);
+    if (date_cmp (d1, d2) == 0) {
+        str_cat_printf (t->error, "Distinct dates marked as equal\n");
+        str_date_internal (t->error, d1, d2);
+        success = false;
+    }
+    test_pop (t, success);
+}
+
+void date_compare_test (struct test_ctx_t *t, char *test_name, struct date_t *d1, struct date_t *d2)
+{
+    bool success = true;
+    test_push (t, "%s", test_name);
+    if (date_cmp (d1, d2) != 0) {
+        str_cat_printf (t->error, "Equal dates marked as different\n");
+        str_date_internal (t->error, d1, d2);
+        success = false;
+    }
+    test_pop (t, success);
+}
+
 void invalid_date_read_test (struct test_ctx_t *t, char *date_str)
 {
     bool success = true;
     struct date_t res = {0};
 
     test_push (t, "'%s' (invalid)", date_str);
-    bool is_valid = date_read (date_str, &res);
+    bool is_valid = date_read (date_str, &res, NULL);
     if (is_valid) {
         str_cat_printf (t->error, "Date should be invalid but isn't.\n");
         success = false;
@@ -22,9 +46,10 @@ void date_read_test_single (struct test_ctx_t *t, char *date_str, struct date_t 
     struct date_t res = {0};
 
     test_push (t, "'%s'", date_str);
-    bool is_valid = date_read (date_str, &res);
+    string_t message = {0};
+    bool is_valid = date_read (date_str, &res, &message);
     if (!is_valid) {
-        str_cat_printf (t->error, "Valid date marked as invalid.\n");
+        str_cat_printf (t->error, "Valid date marked as invalid:\n  '%s'\n", str_data(&message));
         success = false;
 
     } else if (date_cmp (&res, expected) != 0) {
@@ -32,6 +57,7 @@ void date_read_test_single (struct test_ctx_t *t, char *date_str, struct date_t 
         str_date_internal (t->error, &res, expected);
         success = false;
     }
+    str_free (&message);
     test_pop (t, success);
 }
 
@@ -89,6 +115,44 @@ void datetime_tests (struct test_ctx_t *t)
     test_push (t, "Date and Time");
 
     {
+        test_push (t, "Date compare");
+        struct date_t _d1 = {0};
+        struct date_t *d1 = &_d1;
+        struct date_t _d2 = {0};
+        struct date_t *d2 = &_d2;
+
+        date_set (d1, 1900, 8, 7, 2, 3, 4, 0.125, false, 0, 0);
+        date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, false, 1, 1);
+        date_compare_test (t, "Different but disabled UTC offset", d1, d2);
+
+        date_set (d1, 1900, 8, 7, 2, 3, 4, 0.125, true, 0, 0);
+        date_compare_test (t, "Exactly equal values", d1, d1);
+
+        date_set (d2, 1901, 8, 7, 2, 3, 4, 0.125, true, 0, 0);
+        different_date_compare_test (t, "Different year", d1, d2);
+        date_set (d2, 1900, 1, 7, 2, 3, 4, 0.125, true, 0, 0);
+        different_date_compare_test (t, "Different month", d1, d2);
+        date_set (d2, 1900, 8, 1, 2, 3, 4, 0.125, true, 0, 0);
+        different_date_compare_test (t, "Different day", d1, d2);
+        date_set (d2, 1900, 8, 7, 1, 3, 4, 0.125, true, 0, 0);
+        different_date_compare_test (t, "Different hour", d1, d2);
+        date_set (d2, 1900, 8, 7, 2, 0, 4, 0.125, true, 0, 0);
+        different_date_compare_test (t, "Different minute", d1, d2);
+        date_set (d2, 1900, 8, 7, 2, 3, 0, 0.125, true, 0, 0);
+        different_date_compare_test (t, "Different second", d1, d2);
+        date_set (d2, 1900, 8, 7, 2, 3, 4, 0.000, true, 0, 0);
+        different_date_compare_test (t, "Different second fraction", d1, d2);
+        date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, false, 0, 0);
+        different_date_compare_test (t, "Different has UTC offset", d1, d2);
+        date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, true, 1, 0);
+        different_date_compare_test (t, "Different time offset minute", d1, d2);
+        date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, true, 0, 1);
+        different_date_compare_test (t, "Different time offset minute", d1, d2);
+
+        parent_test_pop (t);
+    }
+
+    {
         test_push (t, "Date read");
         struct date_t _expected = {0};
         struct date_t *expected = &_expected;
@@ -97,10 +161,18 @@ void datetime_tests (struct test_ctx_t *t)
         // representable as floating point value, this means it can be safely
         // compared with equality and we don't depend on the rounding mode.
 
+        // Normal timestamp format as defined by RFC3339
+        date_set (expected, 1900, 8, 7, 2, 3, 4, 0.0, true, 0, 0);
+        date_read_test (t, "1900-08-07 02:03:04Z", expected);
         date_set (expected, 1900, 8, 7, 2, 3, 4, 0.125, true, 0, 0);
-        date_read_test (t, "1900-8-7 2:3:4.125Z", expected);
         date_read_test (t, "1900-08-07 02:03:04.125Z", expected);
 
+        // Permissive format where we allow all numeric components except year
+        // to have fewer than 2 digits. Year must always be 4 digits.
+        date_read_test (t, "1900-8-7 2:3:4.125Z", expected);
+
+        // Special notation (not allowed by RFC3339). It allows varying
+        // precision when omitting components at the end.
         date_set (expected, 1900, 1, 1, 20, 30, -1, 0.0, true, 0, 0);
         date_read_test (t, "1900-01-01 20:30Z", expected);
         date_set (expected, 1900, 1, 1, 20, -1, -1, 0.0, true, 0, 0);
@@ -111,6 +183,39 @@ void datetime_tests (struct test_ctx_t *t)
         date_read_test (t, "1900-01 Z", expected);
         date_set (expected, 1900, -1, -1, -1, -1, -1, 0.0, true, 0, 0);
         date_read_test (t, "1900 Z", expected);
+
+        // Invalid length for numeric elements
+        invalid_date_read_test (t, "190-08-07 02:03:04.125Z");
+        invalid_date_read_test (t, "19000-08-07 02:03:04.125Z");
+        invalid_date_read_test (t, "1900-008-07 02:03:04.125Z");
+        invalid_date_read_test (t, "1900-8-007 02:03:04.125Z");
+        invalid_date_read_test (t, "1900-08-07 002:03:04.125Z");
+        invalid_date_read_test (t, "1900-08-07 02:003:04.125Z");
+        invalid_date_read_test (t, "1900-08-07 02:03:004.125Z");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125+006:05");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125+06:005");
+
+        // Invalid missing components
+        invalid_date_read_test (t, "1900-08-0702:03:04.125Z");
+        invalid_date_read_test (t, "-08-07 02:03:04.125Z");
+        invalid_date_read_test (t, "1900--07 02:03:04.125Z");
+        invalid_date_read_test (t, "1900-08- 02:03:04.125Z");
+        invalid_date_read_test (t, "1900-08-07 :03:04.125Z");
+        invalid_date_read_test (t, "1900-08-07 02::04.125Z");
+        invalid_date_read_test (t, "1900-08-07 02:03:.125Z");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125+:05");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125-:05");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125-06:");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.Z");
+        invalid_date_read_test (t, "08-07 02:03:04.125Z");
+        invalid_date_read_test (t, "1900-07 02:03:04.125Z");
+        invalid_date_read_test (t, "1900 02:03:04.125Z");
+        invalid_date_read_test (t, "1900-08-07 03:04.125Z");
+        invalid_date_read_test (t, "1900-08-07 04.125Z");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125+05");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125+");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125-05");
+        invalid_date_read_test (t, "1900-08-07 02:03:04.125-");
 
         parent_test_pop (t);
     }

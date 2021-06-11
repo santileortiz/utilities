@@ -72,7 +72,7 @@ void date_scanner_set_error (struct date_scanner_t *scnr, char *error_message)
 
 void date_scanner_parse_error (struct date_scanner_t *scnr)
 {
-    date_scanner_set_error (scnr, "date has invalid format.");
+    date_scanner_set_error (scnr, "Date has invalid format.");
 }
 
 bool date_scanner_int (struct date_scanner_t *scnr, int32_t *value)
@@ -197,15 +197,20 @@ bool date_scan_utc_offset (struct date_scanner_t *scnr,
 
         bool is_negative = *(scnr->pos - 1) == '-';
 
-        if (!scnr->is_eof) {
-            date_scanner_int (scnr, time_offset_hour);
-            if (is_negative) *time_offset_hour = -(*time_offset_hour);
+        if (!date_scanner_int (scnr, time_offset_hour)) {
+            date_scanner_parse_error (scnr);
+
+        } else if (scnr->len > 2) {
+            date_scanner_set_error (scnr, "Hour UTC offset must be at most 2 digits.");
         }
 
-        if (!scnr->is_eof) {
-            if (date_scanner_char (scnr, ':')) {
-                date_scanner_int (scnr, time_offset_minute);
-            }
+        if (is_negative) *time_offset_hour = -(*time_offset_hour);
+
+        if (!date_scanner_char (scnr, ':') || !date_scanner_int (scnr, time_offset_minute)) {
+            date_scanner_parse_error (scnr);
+
+        } else if (scnr->len > 2) {
+            date_scanner_set_error (scnr, "Minute UTC offset must be at most 2 digits.");
         }
 
         // Following section 4.3. of RFC3339, interpret -00:00 as unknown
@@ -216,6 +221,12 @@ bool date_scan_utc_offset (struct date_scanner_t *scnr,
         }
 
     } else {
+        // TODO: We allow dates with trailing time separators like "1900T",
+        // "1900-08T" or "1900-08-07T". Is this okay?. The following line of
+        // code  would block the first 2 cases.
+        // :trailing_time_separator
+        //
+        // date_scanner_parse_error (scnr);
         success = false;
     }
 
@@ -227,7 +238,7 @@ bool scan_time_separator (struct date_scanner_t *scnr)
     return date_scanner_char (scnr, ' ') || date_scanner_char (scnr, 'T') || date_scanner_char (scnr, 't');
 }
 
-bool date_read (char *date_time_str, struct date_t *date)
+bool date_read (char *date_time_str, struct date_t *date, string_t *message)
 {
     assert (date_time_str != NULL && date != NULL);
 
@@ -239,16 +250,19 @@ bool date_read (char *date_time_str, struct date_t *date)
     int time_offset_minute = 0;
 
     int32_t year;
-    date_scanner_int (&scnr, &year);
-    if (scnr.len < 4) {
-        date_scanner_set_error (&scnr, "Year must be at least 4 digits.");
+    if (!date_scanner_int (&scnr, &year)) {
+        date_scanner_parse_error (&scnr);
+    } else if (scnr.len != 4) {
+        date_scanner_set_error (&scnr, "Year must be 4 digits long.");
     }
 
     int32_t month = -1;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '-')) {
-            date_scanner_int (&scnr, &month);
-            if (scnr.len > 2) {
+            if (!date_scanner_int (&scnr, &month)) {
+                date_scanner_parse_error (&scnr);
+
+            } else if (scnr.len > 2) {
                 date_scanner_set_error (&scnr, "Month must be at most 2 digits.");
             }
 
@@ -263,8 +277,10 @@ bool date_read (char *date_time_str, struct date_t *date)
     int32_t day = -1;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '-')) {
-            date_scanner_int (&scnr, &day);
-            if (scnr.len > 2) {
+            if (!date_scanner_int (&scnr, &day)) {
+                date_scanner_parse_error (&scnr);
+
+            } else if (scnr.len > 2) {
                 date_scanner_set_error (&scnr, "Day must be at most 2 digits.");
             }
 
@@ -279,12 +295,18 @@ bool date_read (char *date_time_str, struct date_t *date)
     int32_t hour = -1;
     if (!scnr.is_eof) {
         if (scan_time_separator (&scnr)) {
-            date_scanner_int (&scnr, &hour);
-            if (scnr.len > 2) {
+            if (!date_scanner_int (&scnr, &hour)) {
+                // The "!scnr.is_eof" condition makes "1900-08-07T" valid.
+                // :trailing_time_separator
+                if (!scnr.is_eof && !date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+                    date_scanner_parse_error (&scnr);
+                }
+
+            } else if (scnr.len > 2) {
                 date_scanner_set_error (&scnr, "Hour must be at most 2 digits.");
             }
 
-        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+        } else {
             date_scanner_parse_error (&scnr);
         }
     }
@@ -292,8 +314,10 @@ bool date_read (char *date_time_str, struct date_t *date)
     int32_t minute = -1;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, ':')) {
-            date_scanner_int (&scnr, &minute);
-            if (scnr.len > 2) {
+            if (!date_scanner_int (&scnr, &minute)) {
+                date_scanner_parse_error (&scnr);
+
+            } else if (scnr.len > 2) {
                 date_scanner_set_error (&scnr, "Minute must be at most 2 digits.");
             }
 
@@ -305,8 +329,9 @@ bool date_read (char *date_time_str, struct date_t *date)
     int32_t second = -1;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, ':')) {
-            date_scanner_int (&scnr, &second);
-            if (scnr.len > 2) {
+            if (!date_scanner_int (&scnr, &second)) {
+                date_scanner_parse_error (&scnr);
+            } else if (scnr.len > 2) {
                 date_scanner_set_error (&scnr, "Second must be at most 2 digits.");
             }
 
@@ -319,7 +344,9 @@ bool date_read (char *date_time_str, struct date_t *date)
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '.')) {
             scnr.pos--;
-            date_scanner_double (&scnr, &second_fraction);
+            if (!date_scanner_double (&scnr, &second_fraction)) {
+                date_scanner_set_error (&scnr, "Invalid second fraction.");
+            }
 
         } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
             date_scanner_parse_error (&scnr);
@@ -332,6 +359,9 @@ bool date_read (char *date_time_str, struct date_t *date)
 
     if (!scnr.error) {
         date_set (date, year, month, day, hour, minute, second, second_fraction, is_set_time_offset, time_offset_hour, time_offset_minute);
+
+    } else if (message != NULL) {
+        str_set (message, scnr.error_message);
     }
 
     return !scnr.error;
@@ -368,7 +398,10 @@ int date_cmp (struct date_t *d1, struct date_t *d2)
     }
 
     if (diff == 0) {
-        diff = d1->second_fraction - d2->second_fraction;
+        double ddiff = d1->second_fraction - d2->second_fraction;
+        if (ddiff != 0) {
+            diff = ddiff < 0 ? -1 : 1;
+        }
     }
 
     if (diff == 0 && d1->is_set_time_offset)  {
