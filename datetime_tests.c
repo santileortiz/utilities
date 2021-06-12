@@ -110,6 +110,116 @@ void date_read_test (struct test_ctx_t *t, char *date_str, struct date_t *expect
     free (buff);
 }
 
+void string_test (struct test_ctx_t *t, char *test_name, char *result, char *expected)
+{
+    bool success = true;
+    test_push (t, "%s (%s)", expected, test_name);
+    if (strcmp (result, expected) != 0) {
+        str_cat_printf (t->error, "Failed string comparison got '%s', expected '%s'\n", result, expected);
+        success = false;
+    }
+    test_pop (t, success);
+}
+
+void int_test (struct test_ctx_t *t, char *test_name, int result, int expected)
+{
+    bool success = true;
+    test_push (t, "%s", test_name);
+    if (result != expected) {
+        str_cat_printf (t->error, "Failed int comparison got %d, expected %d\n", result, expected);
+        success = false;
+    }
+    test_pop (t, success);
+}
+
+void date_write_rfc3339_test (struct test_ctx_t *t, struct date_t *date, char *expected)
+{
+    test_push (t, "%s", expected);
+
+    string_t test_date = {0};
+    str_set (&test_date, expected);
+    size_t base_end = str_len(&test_date);
+
+    char buff[date_max_len[D_SECOND]];
+
+    date->is_set_time_offset = true;
+    date->time_offset_hour = 0;
+    date->time_offset_minute = 0;
+    str_put_c (&test_date, base_end, "Z");
+    date_write_rfc3339 (date, buff);
+    string_test (t, "UTC offset", buff, str_data(&test_date));
+
+    date->time_offset_hour = 6;
+    date->time_offset_minute = 30;
+    str_put_c (&test_date, base_end, "+06:30");
+    date_write_rfc3339 (date, buff);
+    string_test (t, "Positive UTC offset", buff, str_data(&test_date));
+
+    date->time_offset_hour = -6;
+    str_put_c (&test_date, base_end, "-06:30");
+    date_write_rfc3339 (date, buff);
+    string_test (t, "Negative UTC offset", buff, str_data(&test_date));
+
+    date->is_set_time_offset = false;
+    str_put_c (&test_date, base_end, "-00:00");
+    date_write_rfc3339 (date, buff);
+    string_test (t, "Unknown UTC offset", buff, str_data(&test_date));
+
+    parent_test_pop (t);
+}
+
+void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_time_duration_t precision, char *expected)
+{
+    test_push (t, "%s", expected);
+
+    string_t test_date = {0};
+    str_set (&test_date, expected);
+    size_t base_end = str_len(&test_date);
+
+    char buff[date_max_len[precision]];
+
+    date->is_set_time_offset = true;
+    date->time_offset_hour = 6;
+    date->time_offset_minute = 30;
+    str_put_c (&test_date, base_end, "");
+    date_write (date, precision, true, buff);
+    string_test (t, "Force no UTC offset", buff, str_data(&test_date));
+
+    if (precision < D_HOUR) {
+        str_cat_c (&test_date, "T");
+        base_end = str_len(&test_date);
+    }
+
+    date->is_set_time_offset = true;
+    date->time_offset_hour = 0;
+    date->time_offset_minute = 0;
+    str_put_c (&test_date, base_end, "Z");
+    date_write (date, precision, false, buff);
+    string_test (t, "UTC offset", buff, str_data(&test_date));
+
+    date->time_offset_hour = 6;
+    date->time_offset_minute = 30;
+    str_put_c (&test_date, base_end, "+06:30");
+    date_write (date, precision, false, buff);
+    string_test (t, "Positive UTC offset", buff, str_data(&test_date));
+
+    date->time_offset_hour = -6;
+    str_put_c (&test_date, base_end, "-06:30");
+    date_write (date, precision, false, buff);
+    string_test (t, "Negative UTC offset", buff, str_data(&test_date));
+
+    date->is_set_time_offset = false;
+    str_put_c (&test_date, base_end, "-00:00");
+    date_write (date, precision, false, buff);
+    string_test (t, "Unknown UTC offset", buff, str_data(&test_date));
+
+    if (date->second_fraction > 0) {
+        int_test (t, "Maximum length", strlen (buff), date_max_len[precision] - 1);
+    }
+
+    parent_test_pop (t);
+}
+
 void datetime_tests (struct test_ctx_t *t)
 {
     test_push (t, "Date and Time");
@@ -221,19 +331,52 @@ void datetime_tests (struct test_ctx_t *t)
     }
 
     {
+        test_push (t, "Date write as RFC339 timestamp");
+        struct date_t _date = {0};
+        struct date_t *date = &_date;
+
+        date_set (date, 1900, 8, 7, 2, 3, 4, 0.0, false, 0, 0);
+        date_write_rfc3339_test (t, date, "1900-08-07T02:03:04");
+
+        // With second fraction
+        date_set (date, 1900, 8, 7, 2, 3, 4, 1.0/3, false, 0, 0);
+        date_write_rfc3339_test (t, date, "1900-08-07T02:03:04.333");
+
+        parent_test_pop (t);
+    }
+
+    {
+        test_push (t, "Date write");
+        struct date_t _date = {0};
+        struct date_t *date = &_date;
+
+        date_set (date, 1900, 8, 7, 2, 3, 4, 1.0/3, false, 0, 0);
+        date_write_test (t, date, D_SECOND, "1900-08-07T02:03:04.333");
+        date_set (date, 1900, 8, 7, 2, 3, 4, 0.0, false, 0, 0);
+        date_write_test (t, date, D_SECOND, "1900-08-07T02:03:04");
+        date_write_test (t, date, D_MINUTE, "1900-08-07T02:03");
+        date_write_test (t, date, D_HOUR,   "1900-08-07T02");
+        date_write_test (t, date, D_DAY,    "1900-08-07");
+        date_write_test (t, date, D_MONTH,  "1900-08");
+        date_write_test (t, date, D_YEAR,   "1900");
+
+        parent_test_pop (t);
+    }
+
+    {
         test_push (t, "Recurrent event tests");
 
-        char res[DATE_TIME_LEN];
+        char res[DATE_TIMESTAMP_MAX_LEN];
         struct recurrent_event_t re = {0};
 
         {
             bool success = true;
             test_push (t, "Every 7th day");
-            set_recurrent_event (&re, 7, D_DAY, NULL, "1908-01-4");
+            set_recurrent_event (&re, 7, D_DAY, NULL, "1908-1-4");
             //set_recurrent_event_compact (&re, "_-_-[7]", "1908-01-4");
             compute_next_occurence (&re, NULL, res);
 
-            char *expected = "1908-01-11";
+            char *expected = "1908-01-11T-00:00";
             if (strcmp (res, expected) != 0) {
                 str_cat_printf (t->error, "Incorrect next occurence got %s, expected %s\n", res, expected);
                 success = false;

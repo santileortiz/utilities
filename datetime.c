@@ -29,6 +29,9 @@ enum reference_time_duration_t {
     D_SECOND
 };
 
+#define DATE_TIMESTAMP_MAX_LEN 30
+size_t date_max_len[] = {12, 15, 18, 20, 23, DATE_TIMESTAMP_MAX_LEN};
+
 // Is endianess going to affect the order of these? They need to match so that
 // date->year == date->v[D_YEAR]
 struct date_t {
@@ -59,6 +62,61 @@ struct date_scanner_t {
     bool error;
     char *error_message;
 };
+
+int date_cmp (struct date_t *d1, struct date_t *d2)
+{
+    if (d1->is_set_time_offset && d2->is_set_time_offset &&
+        (d1->time_offset_hour != d2->time_offset_hour || d1->time_offset_minute != d2->time_offset_minute) ) {
+        // TODO: normalize dates to UTC then compare.
+        return -1;
+    }
+
+    int diff = d1->year - d2->year;
+
+    if (diff == 0) {
+        diff = d1->month - d2->month;
+    }
+
+    if (diff == 0) {
+        diff = d1->day - d2->day;
+    }
+
+    if (diff == 0) {
+        diff = d1->hour - d2->hour;
+    }
+
+    if (diff == 0) {
+        diff = d1->minute - d2->minute;
+    }
+
+    if (diff == 0) {
+        diff = d1->second - d2->second;
+    }
+
+    if (diff == 0) {
+        double ddiff = d1->second_fraction - d2->second_fraction;
+        if (ddiff != 0) {
+            diff = ddiff < 0 ? -1 : 1;
+        }
+    }
+
+    if (diff == 0 && d1->is_set_time_offset)  {
+        if (d1->is_set_time_offset == d2->is_set_time_offset) {
+            if (diff == 0) {
+                diff = d1->time_offset_hour - d2->time_offset_hour;
+            }
+
+            if (diff == 0) {
+                diff = d1->time_offset_minute - d2->time_offset_minute;
+            }
+
+        } else {
+            diff = -1;
+        }
+    }
+
+    return diff;
+}
 
 void date_scanner_set_error (struct date_scanner_t *scnr, char *error_message)
 {
@@ -367,59 +425,77 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
     return !scnr.error;
 }
 
-int date_cmp (struct date_t *d1, struct date_t *d2)
+void date_write (struct date_t *date, enum reference_time_duration_t precision, bool no_utc_offset, char *buff)
 {
-    if (d1->is_set_time_offset && d2->is_set_time_offset &&
-        (d1->time_offset_hour != d2->time_offset_hour || d1->time_offset_minute != d2->time_offset_minute) ) {
-        // TODO: normalize dates to UTC then compare.
-        return -1;
-    }
+    enum reference_time_duration_t curr_reference_duration = D_YEAR;
 
-    int diff = d1->year - d2->year;
+    char *pos = buff;
+    while (date->v[curr_reference_duration] > 0 && curr_reference_duration <= precision) {
+        if (curr_reference_duration == D_MONTH || curr_reference_duration == D_DAY) {
+            *pos = '-';
+            pos++;
 
-    if (diff == 0) {
-        diff = d1->month - d2->month;
-    }
+        } else if (curr_reference_duration == D_HOUR) {
+            *pos = 'T';
+            pos++;
 
-    if (diff == 0) {
-        diff = d1->day - d2->day;
-    }
-
-    if (diff == 0) {
-        diff = d1->hour - d2->hour;
-    }
-
-    if (diff == 0) {
-        diff = d1->minute - d2->minute;
-    }
-
-    if (diff == 0) {
-        diff = d1->second - d2->second;
-    }
-
-    if (diff == 0) {
-        double ddiff = d1->second_fraction - d2->second_fraction;
-        if (ddiff != 0) {
-            diff = ddiff < 0 ? -1 : 1;
+        } else if (curr_reference_duration > D_HOUR) {
+            *pos = ':';
+            pos++;
         }
+
+        sprintf (pos, "%02d", date->v[curr_reference_duration]);
+
+        if (curr_reference_duration == D_YEAR) {
+            pos += 4;
+        } else if (curr_reference_duration >= D_MONTH && curr_reference_duration <= D_SECOND) {
+            pos += 2;
+        }
+        curr_reference_duration++;
     }
 
-    if (diff == 0 && d1->is_set_time_offset)  {
-        if (d1->is_set_time_offset == d2->is_set_time_offset) {
-            if (diff == 0) {
-                diff = d1->time_offset_hour - d2->time_offset_hour;
-            }
+    // NOTE: This assumes 0 <= date->second_fraction < 1
+    if (precision == D_SECOND && date->second_fraction > 0) {
+        pos--;
+        char tmp = *pos;
 
-            if (diff == 0) {
-                diff = d1->time_offset_minute - d2->time_offset_minute;
-            }
+        int len = sprintf (pos, "%.3f", date->second_fraction);
+
+        *pos = tmp;
+        pos += len;
+    }
+
+    if (!no_utc_offset) {
+        if (precision < D_HOUR) {
+            sprintf (pos, "T");
+            pos++;
+        }
+
+        if (date->is_set_time_offset && date->time_offset_hour == 0 && date->time_offset_minute == 0) {
+            sprintf (pos, "Z");
+
+        } else if (!date->is_set_time_offset) {
+            sprintf (pos, "-00:00");
 
         } else {
-            diff = -1;
+            // NOTE(sleon): sprintf does not pad numbers with 0's numbers that have
+            // signs, so we manually write signs here and use absolute value later.
+            if (date->time_offset_hour < 0) {
+                *pos = '-';
+            } else {
+                *pos = '+';
+            }
+            pos++;
+
+            sprintf (pos, "%02d:%02d", ABS(date->time_offset_hour), date->time_offset_minute);
         }
     }
+}
 
-    return diff;
+static inline
+void date_write_rfc3339 (struct date_t *date, char *buff)
+{
+    date_write (date, D_SECOND, false, buff);
 }
 
 // Define our own type in case we want to provide our own in memory
@@ -607,45 +683,43 @@ int date_compare (char *d1, char *d2)
 }
 
 struct recurrent_event_t {
-    // I think frequence can be stored inside date_element, will always have
+    // I think frequency can be stored inside date_element, will always have
     // spare int there that are not used due to the choice of scale.
-    int frequence;
+    int frequency;
     enum reference_time_duration_t scale;
-    timedate_t date_element;
-    timedate_t start;
+    struct date_t date_element;
+    struct date_t start;
 
     int count;
-    timedate_t end;
+    struct date_t end;
 };
 
-void set_recurrent_event (struct recurrent_event_t *re, int frequence, enum reference_time_duration_t scale, char *date_element, char *start_date)
+void set_recurrent_event (struct recurrent_event_t *re, int frequency, enum reference_time_duration_t scale, char *date_element, char *start_date)
 {
     assert (re != NULL);
 
-    if (frequence < 2) frequence = 1;
-    re->frequence = frequence;
+    if (frequency < 2) frequency = 1;
+    re->frequency = frequency;
 
     re->scale = scale;
 
-    read_date (start_date, &re->start);
+    date_read (start_date, &re->start, NULL);
 }
 
 bool compute_next_occurence (struct recurrent_event_t *re, char *curr_occurence, char *next_occurence)
 {
     assert (re != NULL && next_occurence != NULL);
 
-    timedate_t current_td;
+    struct date_t current_date;
     if (curr_occurence == NULL) {
-        current_td = re->start;
+        current_date = re->start;
     } else {
-        read_date (curr_occurence, &current_td);
+        date_read (curr_occurence, &current_date, NULL);
     }
     
-    if (re->scale == D_DAY) {
-        current_td.tm_mday += re->frequence;
-    }
+    current_date.v[re->scale] += re->frequency;
 
-    strftime (next_occurence, DATE_LEN+1, DATE_FORMAT, &current_td);
+    date_write (&current_date, re->scale, false, next_occurence);
 
     return false;
 }
