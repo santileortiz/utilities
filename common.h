@@ -30,6 +30,10 @@ typedef enum {false, true} bool;
 
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
 
+#if !defined(ABS)
+#define ABS(a) ((a)<0?(-a):(a))
+#endif
+
 #if !defined(MIN)
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #endif
