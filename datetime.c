@@ -20,17 +20,64 @@
 
 #include <time.h>
 
+#define DATE_TIMESTAMP_MAX_LEN 30
+
+#define REFERENCE_TIME_DURATIONS_TABLE \
+    REFERENCE_TIME_DURATIONS_ROW(D_YEAR,   "year",   12) \
+    REFERENCE_TIME_DURATIONS_ROW(D_MONTH,  "month",  15) \
+    REFERENCE_TIME_DURATIONS_ROW(D_DAY,    "day",    18) \
+    REFERENCE_TIME_DURATIONS_ROW(D_HOUR,   "hour",   20) \
+    REFERENCE_TIME_DURATIONS_ROW(D_MINUTE, "minute", 23) \
+    REFERENCE_TIME_DURATIONS_ROW(D_SECOND, "second", DATE_TIMESTAMP_MAX_LEN) \
+
+#define REFERENCE_TIME_DURATIONS_ROW(enum_name, string_name, date_str_max_len) enum_name,
 enum reference_time_duration_t {
-    D_YEAR,
-    D_MONTH,
-    D_DAY,
-    D_HOUR,
-    D_MINUTE,
-    D_SECOND
+    REFERENCE_TIME_DURATIONS_TABLE
+
+    D_REFERENCE_TIME_DURATION_LEN
+};
+#undef REFERENCE_TIME_DURATIONS_ROW
+
+#define REFERENCE_TIME_DURATIONS_ROW(enum_name, string_name, date_str_max_len) string_name,
+char* reference_time_duration_names[] = {
+    REFERENCE_TIME_DURATIONS_TABLE
+};
+#undef REFERENCE_TIME_DURATIONS_ROW
+
+#define REFERENCE_TIME_DURATIONS_ROW(enum_name, string_name, date_str_max_len) date_str_max_len,
+size_t date_max_len[] = {
+    REFERENCE_TIME_DURATIONS_TABLE
+};
+#undef REFERENCE_TIME_DURATIONS_ROW
+
+char *month_names[] = {
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
 };
 
-#define DATE_TIMESTAMP_MAX_LEN 30
-size_t date_max_len[] = {12, 15, 18, 20, 23, DATE_TIMESTAMP_MAX_LEN};
+struct date_element_t {
+    union {
+        struct {
+            int32_t year;
+            int32_t month;
+            int32_t day;
+            int32_t hour;
+            int32_t minute;
+            int32_t second;
+        };
+        int32_t v[6];
+    };
+};
 
 // Is endianess going to affect the order of these? They need to match so that
 // date->year == date->v[D_YEAR]
@@ -49,24 +96,238 @@ struct date_t {
 
     double second_fraction;
 
-    bool is_set_time_offset;
-    int32_t time_offset_hour;
-    int32_t time_offset_minute;
+    bool is_set_utc_offset;
+    int32_t utc_offset_hour;
+    int32_t utc_offset_minute;
 };
 
-struct date_scanner_t {
-    char *pos;
-    bool is_eof;
-    int len;
+#define LEAP_SECOND_TABLE \
+    LEAP_SECOND_ROW (1972, 1, 1) \
+    LEAP_SECOND_ROW (1973, 0, 1) \
+    LEAP_SECOND_ROW (1974, 0, 1) \
+    LEAP_SECOND_ROW (1975, 0, 1) \
+    LEAP_SECOND_ROW (1976, 0, 1) \
+    LEAP_SECOND_ROW (1977, 0, 1) \
+    LEAP_SECOND_ROW (1978, 0, 1) \
+    LEAP_SECOND_ROW (1979, 0, 1) \
+    LEAP_SECOND_ROW (1981, 1, 0) \
+    LEAP_SECOND_ROW (1982, 1, 0) \
+    LEAP_SECOND_ROW (1983, 1, 0) \
+    LEAP_SECOND_ROW (1985, 1, 0) \
+    LEAP_SECOND_ROW (1987, 0, 1) \
+    LEAP_SECOND_ROW (1989, 0, 1) \
+    LEAP_SECOND_ROW (1990, 0, 1) \
+    LEAP_SECOND_ROW (1992, 1, 0) \
+    LEAP_SECOND_ROW (1993, 1, 0) \
+    LEAP_SECOND_ROW (1994, 1, 0) \
+    LEAP_SECOND_ROW (1995, 0, 1) \
+    LEAP_SECOND_ROW (1997, 1, 0) \
+    LEAP_SECOND_ROW (1998, 0, 1) \
+    LEAP_SECOND_ROW (2005, 0, 1) \
+    LEAP_SECOND_ROW (2008, 0, 1) \
+    LEAP_SECOND_ROW (2012, 1, 0) \
+    LEAP_SECOND_ROW (2015, 1, 0) \
+    LEAP_SECOND_ROW (2016, 0, 1) \
 
-    bool error;
-    char *error_message;
-};
+
+#define LEAP_SECOND_ROW(year,june_value, december_value) case year: return june_value;
+int june_leap_second (int year)
+{
+    switch (year) {
+        LEAP_SECOND_TABLE
+        default: return 0;
+    }
+}
+#undef LEAP_SECOND_ROW
+
+#define LEAP_SECOND_ROW(year,june_value, december_value) case year: return december_value;
+int december_leap_second (int year)
+{
+    switch (year) {
+        LEAP_SECOND_TABLE
+        default: return 0;
+    }
+}
+#undef LEAP_SECOND_ROW
+
+void date_get_value_range (enum reference_time_duration_t precision, struct date_t *date, int *min, int *max);
+
+void date_add_value (struct date_t *date, enum reference_time_duration_t duration, int value)
+{
+    enum reference_time_duration_t curr_duration = duration;
+    while (curr_duration != D_YEAR) {
+        int min, max;
+        date_get_value_range (curr_duration, date, &min, &max);
+
+        int new_val = (date->v[curr_duration] - min + value);
+        date->v[curr_duration] = min + new_val%(max-min+1) + ((new_val < 0) ? max-min+1 : 0);
+        value = new_val/(max-min+1) - ((new_val < 0) ? 1 : 0);
+
+        curr_duration--;
+    }
+    date->year += value;
+}
+
+void date_to_utc (struct date_t *date, struct date_t *res)
+{
+    assert (date != NULL && res != NULL);
+
+    if (!date->is_set_utc_offset) return;
+
+    *res = *date;
+
+    res->is_set_utc_offset = true;
+    res->utc_offset_hour = 0;
+    res->utc_offset_minute = 0;
+
+    date_add_value (res, D_HOUR, -date->utc_offset_hour);
+    date_add_value (res, D_MINUTE, -SIGN(date->utc_offset_hour)*date->utc_offset_minute);
+
+    res->utc_offset_hour = 0;
+    res->utc_offset_minute = 0;
+}
+
+void date_get_value_range (enum reference_time_duration_t precision, struct date_t *date, int *min, int *max)
+{
+    int min_l = 0, max_l = 0;
+    if (precision == D_YEAR) {
+        min_l = 1582;
+        max_l = INT32_MAX;
+
+    } else if (precision == D_MONTH) {
+        min_l = 1;
+        max_l = 12;
+
+    } else if (precision == D_DAY) {
+        min_l = 1;
+
+        int year = date->year;
+        int month = date->month;
+        assert (month >= 1 && month <=12);
+
+        if (month == 4 || month == 6 || month == 9 || month == 11) {
+            max_l = 30;
+
+        } else if (month == 2) {
+            if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
+                max_l = 29;
+
+            } else {
+                max_l = 28;
+            }
+
+        } else {
+            max_l = 31;
+        }
+
+    } else if (precision == D_HOUR) {
+        min_l = 0;
+        max_l = 23;
+
+    } else if (precision == D_MINUTE) {
+        min_l = 0;
+        max_l = 59;
+
+    } else if (precision == D_SECOND) {
+        min_l = 0;
+
+        max_l = 59;
+        struct date_t _utc_date = {0};
+        struct date_t *utc_date = &_utc_date;
+
+        // If the UTC offset is unknown, assume it's 00:00, this way
+        // computations that involve durations of time work fine, even in
+        // the absence of the UTC offset. For example: 
+        //
+        //  - Compute the length of a day in seconds
+        //  - Compute the amount of seconds between 2 dates
+        // Store UTC offset
+        bool was_is_set_utc_offset = date->is_set_utc_offset; int h = date->utc_offset_hour; int m = date->utc_offset_minute;
+        if (!was_is_set_utc_offset) {
+            date->is_set_utc_offset = true; date->utc_offset_hour = 0; date->utc_offset_minute = 0;
+        }
+
+        date_to_utc (date, utc_date);
+
+        // Restore UTC offset
+        date->is_set_utc_offset = was_is_set_utc_offset; date->utc_offset_hour = h; date->utc_offset_minute = m;
+
+        int leap_second_value = 0;
+        if (utc_date->day == 30 && utc_date->month == 6)  {
+            leap_second_value = june_leap_second (utc_date->year);
+
+        } else if (utc_date->day == 31 && utc_date->month == 12) {
+            leap_second_value = december_leap_second (utc_date->year);
+        }
+
+        if (leap_second_value != 0 && utc_date->minute == 59 && utc_date->hour == 23) {
+            max_l += leap_second_value;
+        }
+    }
+
+    if (min != NULL) *min = min_l;
+    if (max != NULL) *max = max_l;
+}
+
+bool date_is_valid_d (struct date_t *date, string_t *error)
+{
+    bool is_valid = true;
+
+    enum reference_time_duration_t curr_duration = D_YEAR;
+    while (is_valid && curr_duration < D_REFERENCE_TIME_DURATION_LEN && date->v[curr_duration] != -1) {
+        int min, max;
+        date_get_value_range (curr_duration, date, &min, &max);
+        if (date->v[curr_duration] < min || date->v[curr_duration] > max) {
+            is_valid = false;
+        }
+
+        if (!is_valid && error != NULL) {
+            if (curr_duration == D_YEAR) {
+                // TODO: Maybe this should only be a warning? technically we can
+                // extend the calendar system arbitrarily back into the past, it
+                // just wouldn't match historical dates found in records.
+                str_cat_printf (error, "%d is not a valid year. Only the Gregorian calendar is supported. Dates before the Gregorian reform established on 15 October 1582 are most likely wrong.", date->v[curr_duration]);
+
+            } else if (curr_duration == D_DAY) {
+                if (date->day <= 31) {
+                    str_cat_printf (error, "Day %d is not valid for %s.", date->day, month_names[date->month-1]);
+                    if (date->day == 29) {
+                        str_cat_printf (error, " %d isn't a leap year.", date->year);
+                    }
+
+                } else {
+                    str_cat_printf (error, "%d is not a valid day.", date->day);
+                }
+
+            } else {
+                str_cat_printf (error, "%d is not a valid %s.", date->v[curr_duration], reference_time_duration_names[curr_duration]);
+            }
+        }
+
+        curr_duration++;
+    }
+
+    if (date->is_set_utc_offset) {
+        if (date->utc_offset_hour < -23 || date->utc_offset_hour > 23) {
+            is_valid = false;
+            str_cat_printf (error, "%d is not a valid UTC offset hour.", ABS(date->utc_offset_hour));
+        }
+
+        if (date->utc_offset_minute < 0 || date->utc_offset_minute > 59) {
+            is_valid = false;
+            str_cat_printf (error, "%d is not a valid UTC offset minute.", date->utc_offset_minute);
+        }
+    }
+
+    return is_valid;
+}
 
 int date_cmp (struct date_t *d1, struct date_t *d2)
 {
-    if (d1->is_set_time_offset && d2->is_set_time_offset &&
-        (d1->time_offset_hour != d2->time_offset_hour || d1->time_offset_minute != d2->time_offset_minute) ) {
+    assert (d1 != NULL && d2 != NULL);
+
+    if (d1->is_set_utc_offset && d2->is_set_utc_offset &&
+        (d1->utc_offset_hour != d2->utc_offset_hour || d1->utc_offset_minute != d2->utc_offset_minute) ) {
         // TODO: normalize dates to UTC then compare.
         return -1;
     }
@@ -100,14 +361,14 @@ int date_cmp (struct date_t *d1, struct date_t *d2)
         }
     }
 
-    if (diff == 0 && d1->is_set_time_offset)  {
-        if (d1->is_set_time_offset == d2->is_set_time_offset) {
+    if (diff == 0 && d1->is_set_utc_offset)  {
+        if (d1->is_set_utc_offset == d2->is_set_utc_offset) {
             if (diff == 0) {
-                diff = d1->time_offset_hour - d2->time_offset_hour;
+                diff = d1->utc_offset_hour - d2->utc_offset_hour;
             }
 
             if (diff == 0) {
-                diff = d1->time_offset_minute - d2->time_offset_minute;
+                diff = d1->utc_offset_minute - d2->utc_offset_minute;
             }
 
         } else {
@@ -117,6 +378,15 @@ int date_cmp (struct date_t *d1, struct date_t *d2)
 
     return diff;
 }
+
+struct date_scanner_t {
+    char *pos;
+    bool is_eof;
+    int len;
+
+    bool error;
+    char *error_message;
+};
 
 void date_scanner_set_error (struct date_scanner_t *scnr, char *error_message)
 {
@@ -203,7 +473,7 @@ bool date_scanner_char (struct date_scanner_t *scnr, char c)
 void date_set (struct date_t *d,
                int year, int month, int day,
                int hour, int minute, int second, double second_fraction,
-               bool is_set_time_offset, int time_offset_hour, int time_offset_minute)
+               bool is_set_utc_offset, int utc_offset_hour, int utc_offset_minute)
 {
     d->year = year;
     d->month = month;
@@ -212,9 +482,9 @@ void date_set (struct date_t *d,
     d->minute = minute;
     d->second = second;
     d->second_fraction = second_fraction;
-    d->is_set_time_offset = is_set_time_offset;
-    d->time_offset_hour = time_offset_hour;
-    d->time_offset_minute = time_offset_minute;
+    d->is_set_utc_offset = is_set_utc_offset;
+    d->utc_offset_hour = utc_offset_hour;
+    d->utc_offset_minute = utc_offset_minute;
 }
 #define BOOL_STR(value) (value) ? "true" : "false"
 
@@ -234,37 +504,37 @@ void str_date_internal (string_t *str, struct date_t *d, struct date_t *expected
     (expected != NULL && d->second != expected->second) ?  str_cat_printf (str, " (expected %d)\n", expected->second) : str_cat_printf (str, "\n");
     str_cat_printf (str, " second_fraction: %f", d->second_fraction);
     (expected != NULL && d->second_fraction != expected->second_fraction) ?  str_cat_printf (str, " (expected %f)\n", expected->second_fraction) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " is_set_time_offset: %s", BOOL_STR(d->is_set_time_offset));
-    (expected != NULL && d->is_set_time_offset != expected->is_set_time_offset) ?  str_cat_printf (str, " (expected %s)\n", BOOL_STR(expected->is_set_time_offset)) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " time_offset_hour: %d", d->time_offset_hour);
-    (expected != NULL && d->time_offset_hour != expected->time_offset_hour) ?  str_cat_printf (str, " (expected %d)\n", expected->time_offset_hour) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " time_offset_minute: %d", d->time_offset_minute);
-    (expected != NULL && d->time_offset_minute != expected->time_offset_minute) ?  str_cat_printf (str, " (expected %d)\n", expected->time_offset_minute) : str_cat_printf (str, "\n");
+    str_cat_printf (str, " is_set_utc_offset: %s", BOOL_STR(d->is_set_utc_offset));
+    (expected != NULL && d->is_set_utc_offset != expected->is_set_utc_offset) ?  str_cat_printf (str, " (expected %s)\n", BOOL_STR(expected->is_set_utc_offset)) : str_cat_printf (str, "\n");
+    str_cat_printf (str, " utc_offset_hour: %d", d->utc_offset_hour);
+    (expected != NULL && d->utc_offset_hour != expected->utc_offset_hour) ?  str_cat_printf (str, " (expected %d)\n", expected->utc_offset_hour) : str_cat_printf (str, "\n");
+    str_cat_printf (str, " utc_offset_minute: %d", d->utc_offset_minute);
+    (expected != NULL && d->utc_offset_minute != expected->utc_offset_minute) ?  str_cat_printf (str, " (expected %d)\n", expected->utc_offset_minute) : str_cat_printf (str, "\n");
 }
 
 bool date_scan_utc_offset (struct date_scanner_t *scnr,
-                           bool *is_set_time_offset, int *time_offset_hour, int *time_offset_minute)
+                           bool *is_set_utc_offset, int *utc_offset_hour, int *utc_offset_minute)
 {
     bool success = true;
 
     if (date_scanner_char (scnr, 'Z') || date_scanner_char (scnr, 'z')) {
-        *is_set_time_offset = true;
+        *is_set_utc_offset = true;
 
     } else if (date_scanner_char (scnr, '+') || date_scanner_char (scnr, '-')) {
-        *is_set_time_offset = true;
+        *is_set_utc_offset = true;
 
         bool is_negative = *(scnr->pos - 1) == '-';
 
-        if (!date_scanner_int (scnr, time_offset_hour)) {
+        if (!date_scanner_int (scnr, utc_offset_hour)) {
             date_scanner_parse_error (scnr);
 
         } else if (scnr->len > 2) {
             date_scanner_set_error (scnr, "Hour UTC offset must be at most 2 digits.");
         }
 
-        if (is_negative) *time_offset_hour = -(*time_offset_hour);
+        if (is_negative) *utc_offset_hour = -(*utc_offset_hour);
 
-        if (!date_scanner_char (scnr, ':') || !date_scanner_int (scnr, time_offset_minute)) {
+        if (!date_scanner_char (scnr, ':') || !date_scanner_int (scnr, utc_offset_minute)) {
             date_scanner_parse_error (scnr);
 
         } else if (scnr->len > 2) {
@@ -273,9 +543,9 @@ bool date_scan_utc_offset (struct date_scanner_t *scnr,
 
         // Following section 4.3. of RFC3339, interpret -00:00 as unknown
         // offset to UTC.
-        if (is_negative && *time_offset_hour == 0 && *time_offset_minute == 0)
+        if (is_negative && *utc_offset_hour == 0 && *utc_offset_minute == 0)
         {
-            *is_set_time_offset = false;
+            *is_set_utc_offset = false;
         }
 
     } else {
@@ -303,9 +573,9 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
     struct date_scanner_t scnr = {0};
     scnr.pos = date_time_str;
 
-    bool is_set_time_offset = false;
-    int time_offset_hour = 0;
-    int time_offset_minute = 0;
+    bool is_set_utc_offset = false;
+    int utc_offset_hour = 0;
+    int utc_offset_minute = 0;
 
     int32_t year;
     if (!date_scanner_int (&scnr, &year)) {
@@ -325,7 +595,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
             }
 
         } else if (scan_time_separator (&scnr)) {
-            date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
+            date_scan_utc_offset (&scnr, &is_set_utc_offset, &utc_offset_hour, &utc_offset_minute);
 
         } else {
             date_scanner_parse_error (&scnr);
@@ -343,7 +613,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
             }
 
         } else if (scan_time_separator (&scnr)) {
-            date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
+            date_scan_utc_offset (&scnr, &is_set_utc_offset, &utc_offset_hour, &utc_offset_minute);
 
         } else {
             date_scanner_parse_error (&scnr);
@@ -356,7 +626,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
             if (!date_scanner_int (&scnr, &hour)) {
                 // The "!scnr.is_eof" condition makes "1900-08-07T" valid.
                 // :trailing_time_separator
-                if (!scnr.is_eof && !date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+                if (!scnr.is_eof && !date_scan_utc_offset (&scnr, &is_set_utc_offset, &utc_offset_hour, &utc_offset_minute)) {
                     date_scanner_parse_error (&scnr);
                 }
 
@@ -379,7 +649,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
                 date_scanner_set_error (&scnr, "Minute must be at most 2 digits.");
             }
 
-        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+        } else if (!date_scan_utc_offset (&scnr, &is_set_utc_offset, &utc_offset_hour, &utc_offset_minute)) {
             date_scanner_parse_error (&scnr);
         }
     }
@@ -393,7 +663,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
                 date_scanner_set_error (&scnr, "Second must be at most 2 digits.");
             }
 
-        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+        } else if (!date_scan_utc_offset (&scnr, &is_set_utc_offset, &utc_offset_hour, &utc_offset_minute)) {
             date_scanner_parse_error (&scnr);
         }
     }
@@ -406,23 +676,27 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
                 date_scanner_set_error (&scnr, "Invalid second fraction.");
             }
 
-        } else if (!date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute)) {
+        } else if (!date_scan_utc_offset (&scnr, &is_set_utc_offset, &utc_offset_hour, &utc_offset_minute)) {
             date_scanner_parse_error (&scnr);
         }
     }
 
     if (!scnr.is_eof) {
-        date_scan_utc_offset (&scnr, &is_set_time_offset, &time_offset_hour, &time_offset_minute);
+        date_scan_utc_offset (&scnr, &is_set_utc_offset, &utc_offset_hour, &utc_offset_minute);
     }
 
-    if (!scnr.error) {
-        date_set (date, year, month, day, hour, minute, second, second_fraction, is_set_time_offset, time_offset_hour, time_offset_minute);
-
-    } else if (message != NULL) {
-        str_set (message, scnr.error_message);
+    bool success = true;
+    if (scnr.error) {
+        success = false;
+        if (message != NULL) str_set (message, scnr.error_message);
     }
 
-    return !scnr.error;
+    if (success) {
+        date_set (date, year, month, day, hour, minute, second, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute);
+        success = date_is_valid_d (date, message);
+    }
+
+    return success;
 }
 
 void date_write (struct date_t *date, enum reference_time_duration_t precision, bool no_utc_offset, char *buff)
@@ -471,23 +745,23 @@ void date_write (struct date_t *date, enum reference_time_duration_t precision, 
             pos++;
         }
 
-        if (date->is_set_time_offset && date->time_offset_hour == 0 && date->time_offset_minute == 0) {
+        if (date->is_set_utc_offset && date->utc_offset_hour == 0 && date->utc_offset_minute == 0) {
             sprintf (pos, "Z");
 
-        } else if (!date->is_set_time_offset) {
+        } else if (!date->is_set_utc_offset) {
             sprintf (pos, "-00:00");
 
         } else {
             // NOTE(sleon): sprintf does not pad numbers with 0's numbers that have
             // signs, so we manually write signs here and use absolute value later.
-            if (date->time_offset_hour < 0) {
+            if (date->utc_offset_hour < 0) {
                 *pos = '-';
             } else {
                 *pos = '+';
             }
             pos++;
 
-            sprintf (pos, "%02d:%02d", ABS(date->time_offset_hour), date->time_offset_minute);
+            sprintf (pos, "%02d:%02d", ABS(date->utc_offset_hour), date->utc_offset_minute);
         }
     }
 }
@@ -496,6 +770,16 @@ static inline
 void date_write_rfc3339 (struct date_t *date, char *buff)
 {
     date_write (date, D_SECOND, false, buff);
+}
+
+//////////////////
+// DATE STRING API
+//
+// Convenience functions that work on date strings instead of date_t structs
+bool date_is_valid (char *date_str, string_t *error)
+{
+    struct date_t date;
+    return date_read (date_str, &date, error);
 }
 
 // Define our own type in case we want to provide our own in memory
@@ -509,21 +793,6 @@ typedef struct tm timedate_t;
 
 #define DATE_FORMAT "%Y-%m-%d"
 #define DATE_LEN 10
-
-char *month_names[] = {
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December"
-};
 
 #define get_current_date_time_arr(arr) get_current_date_time (arr,ARRAY_SIZE(arr))
 void get_current_date_time (char *str, size_t buff_size)
@@ -548,63 +817,6 @@ void read_date (char *date_time_str, timedate_t *timedate)
             invalid_code_path;
         }
     }
-}
-
-bool date_is_valid (int year, int month, int day, string_t *error)
-{
-    bool is_valid = true;
-
-    if (year < 1582) {
-        str_cat_printf (error, "%d is not a valid year.", year);
-        if (year > 0) {
-            str_cat_c (error, " Only the Gregorian calendar is supported. Dates before the Gregorian reform established on 15 October 1582 are most likely wrong.");
-        }
-        is_valid = false;
-    }
-
-    if (is_valid) {
-        if (month < 1 || month > 12) {
-            str_cat_printf (error, "%d is not a valid month.", month);
-            is_valid = false;
-        }
-    }
-
-    if (is_valid) {
-        if (day < 1 || day > 31) {
-            str_cat_printf (error, "%d is not a valid day.", day);
-            is_valid = false;
-        }
-    }
-
-    if (is_valid) {
-        if ((month == 4 ||
-            month == 6 ||
-            month == 9 ||
-            month == 11) &&
-            (day > 30)) {
-            str_cat_printf (error, "Day %d is not valid for %s.", day, month_names[month-1]);
-            is_valid = false;
-        }
-    }
-
-    if (is_valid) {
-        if (month == 2) {
-            bool is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-            if (!is_leap_year && day > 28) {
-                str_cat_printf (error, "Day %d is not valid for %s.", day, month_names[month-1]);
-                if (day == 29) {
-                    str_cat_printf (error, " %d isn't a leap year.", year);
-                }
-                is_valid = false;
-
-            } else if (is_leap_year && day > 29) {
-                str_cat_printf (error, "Day %d is not valid for %s.", day, month_names[month-1]);
-                is_valid = false;
-            }
-        }
-    }
-
-    return is_valid;
 }
 
 void read_date_plain (char *date_time_str, int *year, int *month, int *day)
