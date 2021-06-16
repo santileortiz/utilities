@@ -4,6 +4,7 @@ perf.data*
 .cache/*
 bin
 out
+.gdbinit
 gmon.out
 tags
 *__pycache__*
