@@ -19,7 +19,7 @@ void date_compare_test (struct test_ctx_t *t, char *test_name, struct date_t *d1
     bool success = true;
     test_push (t, "%s", test_name);
     if (date_cmp (d1, d2) != 0) {
-        str_cat_printf (t->error, "Equal dates marked as different\n");
+        str_cat_printf (t->error, "Failed date comparison:\n");
         str_date_internal (t->error, d1, d2);
         success = false;
     }
@@ -224,7 +224,7 @@ void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_
     date->utc_offset_hour = 6;
     date->utc_offset_minute = 30;
     str_put_c (&test_date, base_end, "");
-    date_write (date, precision, true, buff);
+    date_write (date, precision, true, true, true, false, buff);
     string_test (t, "Force no UTC offset", buff, str_data(&test_date));
 
     if (precision < D_HOUR) {
@@ -236,23 +236,23 @@ void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_
     date->utc_offset_hour = 0;
     date->utc_offset_minute = 0;
     str_put_c (&test_date, base_end, "Z");
-    date_write (date, precision, false, buff);
+    date_write (date, precision, false, true, true, false, buff);
     string_test (t, "UTC offset", buff, str_data(&test_date));
 
     date->utc_offset_hour = 6;
     date->utc_offset_minute = 30;
     str_put_c (&test_date, base_end, "+06:30");
-    date_write (date, precision, false, buff);
+    date_write (date, precision, false, true, true, false, buff);
     string_test (t, "Positive UTC offset", buff, str_data(&test_date));
 
     date->utc_offset_hour = -6;
     str_put_c (&test_date, base_end, "-06:30");
-    date_write (date, precision, false, buff);
+    date_write (date, precision, false, true, true, false, buff);
     string_test (t, "Negative UTC offset", buff, str_data(&test_date));
 
     date->is_set_utc_offset = false;
     str_put_c (&test_date, base_end, "-00:00");
-    date_write (date, precision, false, buff);
+    date_write (date, precision, false, true, true, false, buff);
     string_test (t, "Unknown UTC offset", buff, str_data(&test_date));
 
     if (precision != D_SECOND || date->second_fraction > 0) {
@@ -260,6 +260,33 @@ void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_
     }
 
     str_free (&test_date);
+    parent_test_pop (t);
+}
+
+#define DATE_STR_L(date, date_str)       \
+char date_str[DATE_TIMESTAMP_MAX_LEN];   \
+{                                        \
+    date_write_rfc3339 (date, date_str); \
+}
+
+void date_operation_test (struct test_ctx_t *t, struct date_t *d1, int value, enum reference_time_duration_t unit,
+                          struct date_t *d2)
+{
+    DATE_STR_L (d1, d1_str);
+    DATE_STR_L (d2, d2_str);
+    test_push (t, "%s + %d(%s) = %s", d1_str, value, reference_time_duration_names[unit], d2_str);
+
+    struct date_t _d = {0};
+    struct date_t *d = &_d;
+
+    *d = *d1;
+    date_add_value (d, value, unit);
+    date_compare_test (t, "d1 + v == d2", d, d2);
+
+    *d = *d2;
+    date_add_value (d, -value, unit);
+    date_compare_test (t, "d2 - v == d1", d, d1);
+
     parent_test_pop (t);
 }
 
@@ -375,6 +402,65 @@ void datetime_tests (struct test_ctx_t *t)
     }
 
     {
+        test_push (t, "Date operations");
+
+        date_operation_test (t,
+            DATE_P(2015, 6, 30, -1, -1, -1, 0.0, false, 0, 0),
+            1, D_DAY,
+            DATE_P(2015, 7,  1, -1, -1, -1, 0.0, false, 0, 0));
+
+        date_operation_test (t,
+            DATE_P(1900, 12, 31, 19, 59, 59, 0.0, false, 0, 0),
+            5, D_HOUR,
+            DATE_P(1901,  1,  1,  0, 59, 59, 0.0, false, 0, 0));
+
+        date_operation_test (t,
+            DATE_P(1900, 12, 31, 23, 59, 59, 0.25, false, 0, 0),
+            1, D_SECOND,
+            DATE_P(1901,  1,  1,  0,  0,  0, 0.25, false, 0, 0));
+
+        // Make sure leap days are taken into account
+        date_operation_test (t,
+            DATE_P(1900, 2, 28, 19, 59, 59, 0.0, false, 0, 0),
+            1, D_DAY,
+            DATE_P(1900, 3,  1, 19, 59, 59, 0.0, false, 0, 0));
+
+        date_operation_test (t,
+            DATE_P(2000, 2, 28, 19, 59, 59, 0.0, false, 0, 0),
+            1, D_DAY,
+            DATE_P(2000, 2, 29, 19, 59, 59, 0.0, false, 0, 0));
+
+        date_operation_test (t,
+            DATE_P(2000, 2, 29, 19, 59, 59, 0.0, false, 0, 0),
+            1, D_DAY,
+            DATE_P(2000, 3,  1, 19, 59, 59, 0.0, false, 0, 0));
+
+        // Make sure leap seconds are taken into account
+        date_operation_test (t,
+            DATE_P(2005, 12, 31, 23, 59, 59, 0.0, false, 0, 0),
+            1, D_SECOND,
+            DATE_P(2005, 12, 31, 23, 59, 60, 0.0, false, 0, 0));
+
+        date_operation_test (t,
+            DATE_P(2005, 12, 31, 23, 59, 60, 0.0, false, 0, 0),
+            1, D_SECOND,
+            DATE_P(2006,  1,  1,  0,  0,  0, 0.0, false, 0, 0));
+
+        date_operation_test (t,
+            DATE_P(2006, 12, 31, 23, 59, 59, 0.0, false, 0, 0),
+            1, D_SECOND,
+            DATE_P(2007,  1,  1,  0,  0,  0, 0.0, false, 0, 0));
+
+        // :unrestricted_date_addition
+        //date_operation_test (t,
+        //    DATE_P(1900, 1, 1, 0, 0, 0, 0.0, false, 0, 0),
+        //    120, D_MINUTE,
+        //    DATE_P(1900, 1, 1, 2, 0, 0, 0.0, false, 0, 0));
+
+        parent_test_pop (t);
+    }
+
+    {
         test_push (t, "Date to UTC");
 
         date_to_utc_test (t, "1900-12-31 18:00:00-05:00",
@@ -473,6 +559,22 @@ void datetime_tests (struct test_ctx_t *t)
         date_set (date, 1900, 8, 7, 2, 3, 4, 1.0/3, false, 0, 0);
         date_write_rfc3339_test (t, date, "1900-08-07T02:03:04.333");
 
+        // Use the smallest value for unknown components.
+        date_set (date, 1900, 8, 7, 2, 3, -1, 0.0, false, 0, 0);
+        date_write_rfc3339_test (t, date, "1900-08-07T02:03:00");
+
+        date->minute = -1;
+        date_write_rfc3339_test (t, date, "1900-08-07T02:00:00");
+
+        date->hour = -1;
+        date_write_rfc3339_test (t, date, "1900-08-07T00:00:00");
+
+        date->day = -1;
+        date_write_rfc3339_test (t, date, "1900-08-01T00:00:00");
+
+        date->month = -1;
+        date_write_rfc3339_test (t, date, "1900-01-01T00:00:00");
+
         parent_test_pop (t);
     }
 
@@ -507,7 +609,7 @@ void datetime_tests (struct test_ctx_t *t)
             //set_recurrent_event_compact (&re, "_-_-[7]", "1908-01-4");
             compute_next_occurence (&re, NULL, res);
 
-            char *expected = "1908-01-11T-00:00";
+            char *expected = "1908-1-11";
             if (strcmp (res, expected) != 0) {
                 str_cat_printf (t->error, "Incorrect next occurence got %s, expected %s\n", res, expected);
                 success = false;

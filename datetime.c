@@ -150,22 +150,80 @@ int december_leap_second (int year)
 }
 #undef LEAP_SECOND_ROW
 
+#define DATE(year, month, day, hour, minute, second, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute) \
+    ((struct date_t){{{year, month, day, hour, minute, second}}, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute})
+
+#define DATE_P(year, month, day, hour, minute, second, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute) \
+    &((struct date_t){{{year, month, day, hour, minute, second}}, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute})
+
 void date_get_value_range (enum reference_time_duration_t precision, struct date_t *date, int *min, int *max);
 
-void date_add_value (struct date_t *date, enum reference_time_duration_t duration, int value)
+// NOTE: Assumes the added values don't exceed the maximum range for the passed
+// duration. For instance, adding 120 minutes instead of 2 hours will result in
+// an error.
+bool date_add_value_restricted (struct date_t *date, int value, enum reference_time_duration_t duration)
 {
-    enum reference_time_duration_t curr_duration = duration;
-    while (curr_duration != D_YEAR) {
-        int min, max;
-        date_get_value_range (curr_duration, date, &min, &max);
+    bool success = true;
 
-        int new_val = (date->v[curr_duration] - min + value);
-        date->v[curr_duration] = min + new_val%(max-min+1) + ((new_val < 0) ? max-min+1 : 0);
-        value = new_val/(max-min+1) - ((new_val < 0) ? 1 : 0);
+    struct date_t result = *date;
+    int min, max;
+
+    struct date_t relative = {0};
+    enum reference_time_duration_t curr_duration = duration;
+    while (curr_duration != D_YEAR && value != 0) {
+        date_get_value_range (curr_duration, date, &min, &max);
+        int new_val = date->v[curr_duration] + value;
+        if (new_val > max) {
+            int remainder = new_val - max;
+
+            relative.v[curr_duration] = remainder;
+            value = 1;
+
+        } else if (new_val < min) {
+            int remainder = min - new_val;
+
+            relative.v[curr_duration] = -remainder;
+            value = -1;
+
+        } else {
+            result.v[curr_duration] = date->v[curr_duration] + value;
+            relative.v[curr_duration] = 0;
+            value = 0;
+        }
 
         curr_duration--;
     }
-    date->year += value;
+    result.year = date->year + value;
+
+    curr_duration = D_MONTH;
+    while (success && curr_duration <= duration) {
+        date_get_value_range (curr_duration, &result, &min, &max);
+        if (relative.v[curr_duration] > 0) {
+            result.v[curr_duration] = min + relative.v[curr_duration] - 1;
+
+        } else if (relative.v[curr_duration] < 0) {
+            result.v[curr_duration] = max + relative.v[curr_duration] + 1;
+        }
+
+        if (result.v[curr_duration] < min || result.v[curr_duration] > max) {
+            success = false;
+        }
+
+        curr_duration++;
+    }
+
+    if (success) {
+        *date = result;
+    }
+
+    return success;
+}
+
+void date_add_value (struct date_t *date, int value, enum reference_time_duration_t duration)
+{
+    // TODO: Use date_add_value_restricted() to compute unrestricted values.
+    // :unrestricted_date_addition
+    date_add_value_restricted (date, value, duration);
 }
 
 void date_to_utc (struct date_t *date, struct date_t *res)
@@ -180,8 +238,8 @@ void date_to_utc (struct date_t *date, struct date_t *res)
     res->utc_offset_hour = 0;
     res->utc_offset_minute = 0;
 
-    date_add_value (res, D_HOUR, -date->utc_offset_hour);
-    date_add_value (res, D_MINUTE, -SIGN(date->utc_offset_hour)*date->utc_offset_minute);
+    date_add_value (res, -date->utc_offset_hour, D_HOUR);
+    date_add_value (res, -SIGN(date->utc_offset_hour)*date->utc_offset_minute, D_MINUTE);
 
     res->utc_offset_hour = 0;
     res->utc_offset_minute = 0;
@@ -326,10 +384,14 @@ int date_cmp (struct date_t *d1, struct date_t *d2)
 {
     assert (d1 != NULL && d2 != NULL);
 
+    struct date_t d1_l, d2_l;
     if (d1->is_set_utc_offset && d2->is_set_utc_offset &&
         (d1->utc_offset_hour != d2->utc_offset_hour || d1->utc_offset_minute != d2->utc_offset_minute) ) {
-        // TODO: normalize dates to UTC then compare.
-        return -1;
+        date_to_utc (d1, &d1_l);
+        d1 = &d1_l;
+
+        date_to_utc (d2, &d2_l);
+        d2 = &d2_l;
     }
 
     int diff = d1->year - d2->year;
@@ -699,12 +761,15 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
     return success;
 }
 
-void date_write (struct date_t *date, enum reference_time_duration_t precision, bool no_utc_offset, char *buff)
+void date_write (struct date_t *date, enum reference_time_duration_t precision, bool no_utc_offset,
+                 bool variable_precision, bool padding, bool optional_utc_offset,
+                 char *buff)
 {
     enum reference_time_duration_t curr_reference_duration = D_YEAR;
 
+    struct date_t min_date = *date;
     char *pos = buff;
-    while (date->v[curr_reference_duration] > 0 && curr_reference_duration <= precision) {
+    while (curr_reference_duration <= precision) {
         if (curr_reference_duration == D_MONTH || curr_reference_duration == D_DAY) {
             *pos = '-';
             pos++;
@@ -718,14 +783,23 @@ void date_write (struct date_t *date, enum reference_time_duration_t precision, 
             pos++;
         }
 
-        sprintf (pos, "%02d", date->v[curr_reference_duration]);
-
-        if (curr_reference_duration == D_YEAR) {
-            pos += 4;
-        } else if (curr_reference_duration >= D_MONTH && curr_reference_duration <= D_SECOND) {
-            pos += 2;
+        int value = date->v[curr_reference_duration];
+        if (!variable_precision && value < 0) {
+            date_get_value_range (curr_reference_duration, &min_date, &value, NULL);
+            min_date.v[curr_reference_duration] = value;
         }
+
+        int len = 0;
+        if (!padding) {
+            len = sprintf (pos, "%d", date->v[curr_reference_duration]);
+        } else {
+            len = sprintf (pos, "%02d", value);
+        }
+
+        pos += len;
         curr_reference_duration++;
+
+        if (variable_precision && date->v[curr_reference_duration] < 0) break;
     }
 
     // NOTE: This assumes 0 <= date->second_fraction < 1
@@ -739,7 +813,7 @@ void date_write (struct date_t *date, enum reference_time_duration_t precision, 
         pos += len;
     }
 
-    if (!no_utc_offset) {
+    if (!no_utc_offset && (!optional_utc_offset || date->is_set_utc_offset)) {
         if (precision < D_HOUR) {
             sprintf (pos, "T");
             pos++;
@@ -769,7 +843,13 @@ void date_write (struct date_t *date, enum reference_time_duration_t precision, 
 static inline
 void date_write_rfc3339 (struct date_t *date, char *buff)
 {
-    date_write (date, D_SECOND, false, buff);
+    date_write (date, D_SECOND, false, false, true, false, buff);
+}
+
+static inline
+void date_write_compact (struct date_t *date, char *buff)
+{
+    date_write (date, D_SECOND, false, true, false, true, buff);
 }
 
 //////////////////
@@ -929,9 +1009,9 @@ bool compute_next_occurence (struct recurrent_event_t *re, char *curr_occurence,
         date_read (curr_occurence, &current_date, NULL);
     }
     
-    current_date.v[re->scale] += re->frequency;
+    date_add_value (&current_date, re->frequency, re->scale);
 
-    date_write (&current_date, re->scale, false, next_occurence);
+    date_write_compact (&current_date, next_occurence);
 
     return false;
 }
