@@ -226,6 +226,33 @@ void date_add_value (struct date_t *date, int value, enum reference_time_duratio
     date_add_value_restricted (date, value, duration);
 }
 
+void date_get_now_d (struct date_t *date)
+{
+    assert (date != NULL);
+
+    time_t t = time(NULL);
+    struct tm local_time = {0};
+    // TODO: Instead of calling localtime_r() use date_add_value() once these
+    // kinds of operations are implemented and are fast. This would remove a
+    // dependency on an external library.
+    tzset();
+    if (!localtime_r (&t, &local_time)) {
+        // We will assume this never happens.
+        invalid_code_path;
+    }
+
+    date->year = 1900 + local_time.tm_year;
+    date->month = local_time.tm_mon;
+    date->day = local_time.tm_mday;
+    date->hour = local_time.tm_hour;
+    date->minute = local_time.tm_min;
+    date->second = local_time.tm_sec;
+
+    date->is_set_utc_offset = true;
+    date->utc_offset_hour = local_time.tm_gmtoff/3600;
+    date->utc_offset_minute = local_time.tm_gmtoff%3600;
+}
+
 void date_to_utc (struct date_t *date, struct date_t *res)
 {
     assert (date != NULL && res != NULL);
@@ -590,21 +617,33 @@ bool date_scan_utc_offset (struct date_scanner_t *scnr,
         if (!date_scanner_int (scnr, utc_offset_hour)) {
             date_scanner_parse_error (scnr);
 
-        } else if (scnr->len > 2) {
-            date_scanner_set_error (scnr, "Hour UTC offset must be at most 2 digits.");
+        } else if (scnr->len == 2 || scnr->len == 1) {
+            if (!date_scanner_char (scnr, ':') || !date_scanner_int (scnr, utc_offset_minute)) {
+                date_scanner_parse_error (scnr);
+            }
+
+            if (scnr->len > 2) {
+                date_scanner_set_error (scnr, "Minute UTC offset must be at most 2 digits.");
+            }
+
+        } else if (scnr->len == 4) {
+            // A common format for the UTC offset seems to be +hhmm or -hhmm,
+            // this format without the ':' character isn't allowed by RFC3339
+            // but is valid in ISO 8601. If we got a 4 digit number then assume
+            // the date was using this no-colon format. We must support this
+            // format because very common functions like strftime() only write
+            // the UTC offset like this.
+            *utc_offset_minute = (*utc_offset_hour)%100;
+            *utc_offset_hour = (*utc_offset_hour)/100;
+
+        } else {
+            date_scanner_set_error (scnr, "UTC offset must be in hhmm or hh:mm format.");
         }
 
         if (is_negative) *utc_offset_hour = -(*utc_offset_hour);
 
-        if (!date_scanner_char (scnr, ':') || !date_scanner_int (scnr, utc_offset_minute)) {
-            date_scanner_parse_error (scnr);
-
-        } else if (scnr->len > 2) {
-            date_scanner_set_error (scnr, "Minute UTC offset must be at most 2 digits.");
-        }
-
         // Following section 4.3. of RFC3339, interpret -00:00 as unknown
-        // offset to UTC.
+        // UTC offset.
         if (is_negative && *utc_offset_hour == 0 && *utc_offset_minute == 0)
         {
             *is_set_utc_offset = false;
@@ -847,131 +886,9 @@ void date_write_rfc3339 (struct date_t *date, char *buff)
 }
 
 static inline
-void date_write_compact (struct date_t *date, char *buff)
+void date_write_compact (struct date_t *date, enum reference_time_duration_t precision, char *buff)
 {
-    date_write (date, D_SECOND, false, true, false, true, buff);
-}
-
-//////////////////
-// DATE STRING API
-//
-// Convenience functions that work on date strings instead of date_t structs
-bool date_is_valid (char *date_str, string_t *error)
-{
-    struct date_t date;
-    return date_read (date_str, &date, error);
-}
-
-// Define our own type in case we want to provide our own in memory
-// representaton different than struct tm. We won't allow uses of this struct
-// outside of this file. All code must use string dates. If it becomes a
-// performance bottleneck we may reconsider this.
-typedef struct tm timedate_t;
-
-#define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S%z"
-#define DATE_TIME_LEN 24
-
-#define DATE_FORMAT "%Y-%m-%d"
-#define DATE_LEN 10
-
-#define get_current_date_time_arr(arr) get_current_date_time (arr,ARRAY_SIZE(arr))
-void get_current_date_time (char *str, size_t buff_size)
-{
-    assert (buff_size > DATE_TIME_LEN);
-
-    time_t t = time(NULL);
-    struct tm local_time = {0};
-    if (!localtime_r (&t, &local_time)) {
-        // We will assume this never happens.
-        invalid_code_path;
-    }
-
-    strftime (str, buff_size, DATE_TIME_FORMAT, &local_time);
-}
-
-void read_date (char *date_time_str, timedate_t *timedate)
-{
-    if (!strptime (date_time_str, DATE_TIME_FORMAT, timedate)) {
-        if (!strptime (date_time_str, DATE_FORMAT, timedate)) {
-            // This is a fatal parsing error.
-            invalid_code_path;
-        }
-    }
-}
-
-void read_date_plain (char *date_time_str, int *year, int *month, int *day)
-{
-    timedate_t timedate = {0};
-    read_date (date_time_str, &timedate);
-    *day = timedate.tm_mday;
-    *month = timedate.tm_mon + 1;
-    *year = timedate.tm_year + 1900;
-}
-
-// TODO: A date_time_reformat() function would be better and more 'generic' but
-// there doesn't seem to be a straightforward way to know what the end size of a
-// specific format would be, so it can be correctly allocated beforehand. There
-// is also no way of distinguishing the case where the buffer was too small and
-// where the format yielded an empty string.
-char* date_time_to_date (mem_pool_t *pool, char *date_time_str)
-{
-    char *date = pom_push_size (pool, DATE_LEN+1);
-    timedate_t timedate = {0};
-
-    // FIXME: We assume that a shorter datetime string will be a date string. In
-    // reality we would like to support varying levels of precission with
-    // datetime strings. Year only, year and month, date, date and hour etc.
-    // :shorter_date_time_is_date
-    if (strlen(date_time_str) == DATE_TIME_LEN) {
-        read_date (date_time_str, &timedate);
-
-        strftime (date, DATE_LEN+1, DATE_FORMAT, &timedate);
-    } else {
-        strncpy (date, date_time_str, DATE_LEN+1);
-    }
-    return date;
-}
-
-void date_time_to_date_str (char *date_time_str, string_t *str)
-{
-    str_maybe_grow (str, DATE_LEN+1, false);
-
-    char *dest = str_data(str);
-    timedate_t timedate = {0};
-
-    // :shorter_date_time_is_date
-    if (strlen(date_time_str) == DATE_TIME_LEN) {
-        read_date (date_time_str, &timedate);
-
-        strftime (dest, DATE_LEN+1, DATE_FORMAT, &timedate);
-    } else {
-        strncpy (dest, date_time_str, DATE_LEN+1);
-    }
-}
-
-int date_compare (char *d1, char *d2)
-{
-    timedate_t date1, date2;
-
-    read_date (d1, &date1);
-    read_date (d2, &date2);
-
-    int res = 0;
-    if (date1.tm_year < date2.tm_year) {
-        res = -1;
-    } else if (date1.tm_year > date2.tm_year) {
-        res = 1;
-    } else if (date1.tm_mon < date2.tm_mon) {
-        res = -1;
-    } else if (date1.tm_mon > date2.tm_mon) {
-        res = 1;
-    } else if (date1.tm_mday < date2.tm_mday) {
-        res = -1;
-    } else if (date1.tm_mday > date2.tm_mday) {
-        res = 1;
-    }
-
-    return res;
+    date_write (date, precision, false, true, false, true, buff);
 }
 
 struct recurrent_event_t {
@@ -1011,7 +928,46 @@ bool compute_next_occurence (struct recurrent_event_t *re, char *curr_occurence,
     
     date_add_value (&current_date, re->frequency, re->scale);
 
-    date_write_compact (&current_date, next_occurence);
+    date_write_compact (&current_date, D_SECOND, next_occurence);
 
     return false;
+}
+
+//////////////////
+// DATE STRING API
+//
+// Convenience functions that work on date strings instead of date_t structs
+bool date_is_valid (char *date_str, string_t *error)
+{
+    struct date_t date;
+    return date_read (date_str, &date, error);
+}
+
+int date_cmp_str (char *d1, char *d2, bool *success, string_t *error)
+{
+    bool success_l;
+    if (success == NULL) success = &success_l;
+
+    string_t error_l;
+    if (error == NULL) error = &error_l;
+
+    struct date_t date1, date2;
+
+    *success = date_read (d1, &date1, error);
+    if (*success) {
+        *success = date_read (d2, &date2, error);
+    }
+
+    return date_cmp (&date1, &date2);
+}
+
+// NOTE: buff must have allocated at least DATE_TIMESTAMP_MAX_LEN bytes.
+void date_get_now (char *buff)
+{
+    assert (buff != NULL);
+
+    struct date_t now = {0};
+    date_get_now_d (&now);
+    date_write_rfc3339 (&now, buff);
+    printf ("%s\n", buff);
 }

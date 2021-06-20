@@ -102,39 +102,60 @@ void valid_date_read_test (struct test_ctx_t *t, char *date_str)
     date_read_test_single (t, date_str, NULL);
 }
 
+void date_read_test_offset_types (struct test_ctx_t *t, string_t *test_date, struct date_t *expected)
+{
+    size_t base_end = str_len(test_date);
+
+    // RFC3339 UTC offset
+    str_put_c (test_date, base_end, "06:05");
+    date_read_test_single (t, str_data(test_date), expected);
+
+    // Non-padded
+    str_put_c (test_date, base_end, "6:5");
+    date_read_test_single (t, str_data(test_date), expected);
+
+    // Non-colon ISO 8601
+    str_put_c (test_date, base_end, "0605");
+    date_read_test_single (t, str_data(test_date), expected);
+}
+
 void date_read_test_all_offsets (struct test_ctx_t *t, char *date_str, struct date_t *expected)
 {
-    date_read_test_single (t, date_str, expected);
+    struct date_t expected_l = *expected;
 
-    int num_replacements;
-    mem_pool_t pool = {0};
-    char *date_str_l = cstr_dupreplace (&pool, date_str, "Z", "+6:5", &num_replacements);
-    if (num_replacements > 0) {
-        struct date_t expected_l = *expected;
+    string_t _test_date = {0};
+    string_t *test_date = &_test_date;
+    str_set (test_date, date_str);
+    size_t base_end = str_len(test_date);
 
-        // Positive UTC offset
-        expected_l.utc_offset_hour = 6;
-        expected_l.utc_offset_minute = 5;
-        date_read_test_single (t, date_str_l, &expected_l);
-        date_str_l = cstr_dupreplace (&pool, date_str, "Z", "+06:05", &num_replacements);
-        date_read_test_single (t, date_str_l, &expected_l);
+    // Zero UTC offset
+    expected_l.is_set_utc_offset = true;
+    expected_l.utc_offset_hour = 0;
+    expected_l.utc_offset_minute = 0;
+    str_put_c (test_date, base_end, "Z");
+    date_read_test_single (t, str_data(test_date), &expected_l);
+    str_put_c (test_date, base_end, "+00:00");
+    date_read_test_single (t, str_data(test_date), &expected_l);
 
-        // Negative UTC offset
-        expected_l.utc_offset_hour = -6;
-        date_str_l = cstr_dupreplace (&pool, date_str, "Z", "-6:5", &num_replacements);
-        date_read_test_single (t, date_str_l, &expected_l);
-        date_str_l = cstr_dupreplace (&pool, date_str, "Z", "-06:05", &num_replacements);
-        date_read_test_single (t, date_str_l, &expected_l);
+    // Positive UTC offset
+    expected_l.utc_offset_hour = 6;
+    expected_l.utc_offset_minute = 5;
+    str_put_c (test_date, base_end, "+");
+    date_read_test_offset_types (t, test_date, &expected_l);
 
-        // Unknown UTC offset
-        expected_l.is_set_utc_offset = false;
-        date_str_l = cstr_rstrip(cstr_dupreplace (&pool, date_str, "Z", "", &num_replacements));
-        date_read_test_single (t, date_str_l, &expected_l);
-        date_str_l = cstr_dupreplace (&pool, date_str, "Z", "-00:00", &num_replacements);
-        date_read_test_single (t, date_str_l, &expected_l);
+    // Negative UTC offset
+    expected_l.utc_offset_hour = -6;
+    str_put_c (test_date, base_end, "-");
+    date_read_test_offset_types (t, test_date, &expected_l);
 
-    }
-    mem_pool_destroy (&pool);
+    // Unknown UTC offset
+    expected_l.is_set_utc_offset = false;
+    str_put_c (test_date, base_end, "-00:00");
+    date_read_test_single (t, str_data(test_date), &expected_l);
+    str_put_c (test_date, base_end, "");
+    date_read_test_single (t, str_data(test_date), &expected_l);
+
+    str_free (test_date);
 }
 
 void date_read_test (struct test_ctx_t *t, char *date_str, struct date_t *expected)
@@ -343,26 +364,26 @@ void datetime_tests (struct test_ctx_t *t)
 
         // Normal timestamp format as defined by RFC3339
         date_set (expected, 1900, 8, 7, 2, 3, 4, 0.0, true, 0, 0);
-        date_read_test (t, "1900-08-07 02:03:04Z", expected);
+        date_read_test (t, "1900-08-07 02:03:04", expected);
         date_set (expected, 1900, 8, 7, 2, 3, 4, 0.125, true, 0, 0);
-        date_read_test (t, "1900-08-07 02:03:04.125Z", expected);
+        date_read_test (t, "1900-08-07 02:03:04.125", expected);
 
         // Permissive format where we allow all numeric components except year
         // to have fewer than 2 digits. Year must always be 4 digits.
-        date_read_test (t, "1900-8-7 2:3:4.125Z", expected);
+        date_read_test (t, "1900-8-7 2:3:4.125", expected);
 
         // Special notation (not allowed by RFC3339). It allows varying
         // precision when omitting components at the end.
         date_set (expected, 1900, 1, 1, 20, 30, -1, 0.0, true, 0, 0);
-        date_read_test (t, "1900-01-01 20:30Z", expected);
+        date_read_test (t, "1900-01-01 20:30", expected);
         date_set (expected, 1900, 1, 1, 20, -1, -1, 0.0, true, 0, 0);
-        date_read_test (t, "1900-01-01 20Z", expected);
+        date_read_test (t, "1900-01-01 20", expected);
         date_set (expected, 1900, 1, 1, -1, -1, -1, 0.0, true, 0, 0);
-        date_read_test (t, "1900-01-01 Z", expected);
+        date_read_test (t, "1900-01-01 ", expected);
         date_set (expected, 1900, 1, -1, -1, -1, -1, 0.0, true, 0, 0);
-        date_read_test (t, "1900-01 Z", expected);
+        date_read_test (t, "1900-01 ", expected);
         date_set (expected, 1900, -1, -1, -1, -1, -1, 0.0, true, 0, 0);
-        date_read_test (t, "1900 Z", expected);
+        date_read_test (t, "1900 ", expected);
 
         // Invalid length for numeric elements
         invalid_date_read_test (t, "190-08-07 02:03:04.125Z");
