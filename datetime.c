@@ -50,6 +50,29 @@ size_t date_max_len[] = {
 };
 #undef REFERENCE_TIME_DURATIONS_ROW
 
+
+#define DAYS_OF_WEEK_TABLE \
+    DAYS_OF_WEEK_ROW(D_SUNDAY,    "Sunday")    \
+    DAYS_OF_WEEK_ROW(D_MONDAY,    "Monday")    \
+    DAYS_OF_WEEK_ROW(D_TUESDAY,   "Tuesday")   \
+    DAYS_OF_WEEK_ROW(D_WEDNESDAY, "Wednesday") \
+    DAYS_OF_WEEK_ROW(D_THURSDAY,  "Thursday")  \
+    DAYS_OF_WEEK_ROW(D_FRIDAY,    "Friday")    \
+    DAYS_OF_WEEK_ROW(D_SATURDAY,  "Saturday")  \
+
+#define DAYS_OF_WEEK_ROW(enum_name, string_name) string_name,
+char* day_names[] = {
+    DAYS_OF_WEEK_TABLE
+};
+#undef DAYS_OF_WEEK_ROW
+
+#define DAYS_OF_WEEK_ROW(enum_name, string_name) enum_name,
+enum day_of_week_t {
+    DAYS_OF_WEEK_TABLE
+};
+#undef DAYS_OF_WEEK_ROW
+
+
 char *month_names[] = {
     "January",
     "February",
@@ -153,8 +176,28 @@ int december_leap_second (int year)
 #define DATE(year, month, day, hour, minute, second, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute) \
     ((struct date_t){{{year, month, day, hour, minute, second}}, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute})
 
+#define DATE_DAY(year, month, day) \
+    (DATE(year, month, day, -1, -1, -1, 0.0, false, 0, 0))
+#define DATE_MONTH(year, month) \
+    (DATE(year, month, -1, -1, -1, -1, 0.0, false, 0, 0))
+#define DATE_YEAR(year) \
+    (DATE(year, -1, -1, -1, -1, -1, 0.0, false, 0, 0))
+
 #define DATE_P(year, month, day, hour, minute, second, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute) \
     &((struct date_t){{{year, month, day, hour, minute, second}}, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute})
+
+#define DATE_ELEMENT(year, month, day, hour, minute, second) \
+    ((struct date_element_t){{{year, month, day, hour, minute, second}}})
+
+#define DATE_ELEMENT_DAY(year, month, day) \
+    (DATE_ELEMENT(year, month, day, -1, -1, -1))
+#define DATE_ELEMENT_MONTH(year, month) \
+    (DATE_ELEMENT(year, month, -1, -1, -1, -1))
+#define DATE_ELEMENT_YEAR(year) \
+    (DATE_ELEMENT(year, -1, -1, -1, -1, -1))
+
+#define DATE_ELEMENT_P(year, month, day, hour, minute, second) \
+    &((struct date_element_t){{{year, month, day, hour, minute, second}}})
 
 void date_get_value_range (enum reference_time_duration_t precision, struct date_t *date, int *min, int *max);
 
@@ -242,7 +285,7 @@ void date_get_now_d (struct date_t *date)
     }
 
     date->year = 1900 + local_time.tm_year;
-    date->month = local_time.tm_mon;
+    date->month = 1 + local_time.tm_mon;
     date->day = local_time.tm_mday;
     date->hour = local_time.tm_hour;
     date->minute = local_time.tm_min;
@@ -891,44 +934,137 @@ void date_write_compact (struct date_t *date, enum reference_time_duration_t pre
     date_write (date, precision, false, true, false, true, buff);
 }
 
+// Taken from Apendix B of RFC3339. Implements Zeller's congruence.
+int date_get_day_of_week(struct date_t *date)
+{
+    int year = date->year;
+    int month = date->month;
+    int day = date->day;
+
+    /* adjust months so February is the last one */
+    month -= 2;
+    if (month < 1) {
+        month += 12;
+        --year;
+    }
+
+    /* split by century */
+    int cent = year / 100;
+    year %= 100;
+
+    return ((26*month - 2)/10 + day + year + year/4 + cent/4 + 5*cent)%7;
+}
+
+// Based on the derivation of Zeller's congruence, this computes an absolute
+// integer value for the day of the passed date. It considers variable month
+// lengths as well as extra days of leap years.
+int date_get_absolute_day_number(struct date_t *date)
+{
+    int year = date->year;
+    int month = date->month;
+    int day = date->day;
+
+    month -= 2;
+    if (month < 1) {
+        month += 12;
+        --year;
+    }
+
+    int cent = year/100;
+    year %= 100;
+
+    int result = 36524*cent + cent/4;
+    result += 365*year + year/4;
+    result += 153*((month-1)/5) + 31*(((month-1)%5+1)/2) + 30*(((month-1)%5)/2); /*careful with parenthesis!*/
+    result += day;
+
+    return result;
+}
+
+// Computes the equivalence class of the day of the passed date modulo n. It
+// assumes the reference date modulo n is equivalence class 0. This is useful to
+// determine if a day is part of some recurrent pattern of days like "every 15
+// days".
+int date_generic_zellers_congruence(struct date_t *reference, struct date_t *date, int n)
+{
+    int offset = date_cmp (date, reference) < 0 ? n : 0;
+    return offset + (date_get_absolute_day_number(date) - date_get_absolute_day_number (reference))%n;
+}
+
 struct recurrent_event_t {
     // I think frequency can be stored inside date_element, will always have
     // spare int there that are not used due to the choice of scale.
     int frequency;
     enum reference_time_duration_t scale;
-    struct date_t date_element;
+    struct date_element_t date_element;
     struct date_t start;
 
     int count;
     struct date_t end;
 };
 
-void set_recurrent_event (struct recurrent_event_t *re, int frequency, enum reference_time_duration_t scale, char *date_element, char *start_date)
+bool recurrent_event_set (struct recurrent_event_t *re,
+                          int frequency, enum reference_time_duration_t scale,
+                          struct date_element_t *date_element, struct date_t *start_date,
+                          string_t *error)
 {
-    assert (re != NULL);
+    assert (re != NULL && start_date != NULL);
+
+    string_t error_l;
+    if (error == NULL) error = &error_l;
+
+    bool success = true;
 
     if (frequency < 2) frequency = 1;
     re->frequency = frequency;
-
     re->scale = scale;
 
-    date_read (start_date, &re->start, NULL);
+    if (date_element != NULL) {
+        re->date_element = *date_element;
+    } else {
+        // NOTE: A zeroed out date element means unset. Checking year==0 can
+        // detect this. A set date element will have year==-1.
+        re->date_element = (struct date_element_t){0};
+    }
+
+    if (date_element != NULL) {
+        enum reference_time_duration_t curr_duration = D_YEAR;
+        while (date_element->v[curr_duration] == -1) curr_duration++;
+        if (curr_duration != scale + 1) {
+            success = false;
+            str_cat_printf (error, "Date element's undefined must be up to scale's precision value");
+        }
+    }
+
+    re->start = *start_date;
+
+    return success;
 }
 
-bool compute_next_occurence (struct recurrent_event_t *re, char *curr_occurence, char *next_occurence)
+bool recurrent_event_next (struct recurrent_event_t *re, struct date_t *curr_occurence, struct date_t *next)
 {
-    assert (re != NULL && next_occurence != NULL);
+    assert (re != NULL && next != NULL);
 
-    struct date_t current_date;
+    struct date_t result;
     if (curr_occurence == NULL) {
-        current_date = re->start;
+        result = re->start;
     } else {
-        date_read (curr_occurence, &current_date, NULL);
+        result = *curr_occurence;
     }
     
-    date_add_value (&current_date, re->frequency, re->scale);
+    date_add_value (&result, re->frequency, re->scale);
 
-    date_write_compact (&current_date, D_SECOND, next_occurence);
+    if (re->date_element.year != 0) {
+        enum reference_time_duration_t curr_duration = D_YEAR;
+        while (re->date_element.v[curr_duration] == -1) curr_duration++;
+
+        while (curr_duration < D_REFERENCE_TIME_DURATION_LEN && re->date_element.v[curr_duration] != -1) {
+            result.v[curr_duration] = re->date_element.v[curr_duration];
+            curr_duration++;
+        }
+    }
+
+    *next = result;
 
     return false;
 }
@@ -969,5 +1105,4 @@ void date_get_now (char *buff)
     struct date_t now = {0};
     date_get_now_d (&now);
     date_write_rfc3339 (&now, buff);
-    printf ("%s\n", buff);
 }

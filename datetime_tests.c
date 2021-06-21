@@ -311,6 +311,87 @@ void date_operation_test (struct test_ctx_t *t, struct date_t *d1, int value, en
     parent_test_pop (t);
 }
 
+bool date_get_day_of_week_test (struct test_ctx_t *t, char *test_name, struct date_t *date, enum day_of_week_t expected)
+{
+    bool success = true;
+
+    int day = date_get_day_of_week (date);
+
+    char buff[DATE_TIMESTAMP_MAX_LEN];
+    date_write_compact (date, D_SECOND, buff);
+
+    if (test_name == NULL) {
+        test_push (t, "%s", buff);
+    } else {
+        test_push (t, "%s (%s)", test_name, buff);
+    }
+
+    if (day != expected) {
+        success = false;
+        str_cat_printf (t->error, "Wrong day of week got '%s', expected '%s'\n",
+                        day_names[day], day_names[expected]);
+    }
+    test_pop (t, success);
+
+    return success;
+}
+
+void date_generic_zellers_congruence_test (struct test_ctx_t *t, char *test_name,
+                                           struct date_t *reference, struct date_t *date, int n,
+                                           enum day_of_week_t expected)
+{
+    bool success = true;
+
+    int day = date_generic_zellers_congruence (reference, date, n);
+
+    char buff[DATE_TIMESTAMP_MAX_LEN];
+    date_write_compact (date, D_SECOND, buff);
+
+    if (test_name == NULL) {
+        test_push (t, "%s", buff);
+    } else {
+        test_push (t, "%s (%s)", test_name, buff);
+    }
+
+    if (day != expected) {
+        success = false;
+        str_cat_printf (t->error, "Wrong day of week got '%s', expected '%s'\n",
+                        day_names[day], day_names[expected]);
+    }
+    test_pop (t, success);
+}
+
+void date_recurrent_event_test (struct test_ctx_t *t, char *test_name,
+                                int frequency, enum reference_time_duration_t scale,
+                                struct date_element_t *date_element, struct date_t *start_date,
+                                struct date_t *expected)
+{
+    string_t error = {0};
+    bool success = true;
+    struct date_t result = {0};
+    struct recurrent_event_t re = {0};
+
+    test_push (t, "%s", test_name);
+
+    success = recurrent_event_set (&re,
+                                   frequency, scale, date_element,
+                                   start_date,
+                                   &error);
+
+    test_push (t, "Validate recurrent event definition");
+    if (!success) {
+        str_cat_printf (t->error, "Invalid recurrent event definition:\n  %s\n", str_data (&error));
+    }
+    test_pop (t, success);
+
+    if (success) {
+        recurrent_event_next (&re, NULL, &result);
+        date_compare_test (t, "Compute next", &result, expected);
+    }
+
+    parent_test_pop (t);
+}
+
 void datetime_tests (struct test_ctx_t *t)
 {
     test_push (t, "Date and Time");
@@ -618,25 +699,152 @@ void datetime_tests (struct test_ctx_t *t)
     }
 
     {
+        test_push (t, "Get day of week");
+
+        date_get_day_of_week_test (t, NULL,
+                                   &DATE_DAY(2000, 1, 1),
+                                   D_SATURDAY);
+
+        date_get_day_of_week_test (t, NULL,
+                                   &DATE_DAY(2000, 3, 1),
+                                   D_WEDNESDAY);
+
+        struct date_t now;
+        date_get_now_d (&now);
+
+        struct tm local_time = {0};
+        time_t now_seconds = time(NULL);
+        localtime_r (&now_seconds, &local_time);
+
+        date_get_day_of_week_test (t, "Today",
+                                   &now,
+                                   local_time.tm_wday);
+
+        parent_test_pop (t);
+    }
+
+    {
+        test_push (t, "Generic Zeller's congruence");
+
+        struct date_t first_sunday = DATE_DAY(0, 3, 5);
+        enum day_of_week_t expected = date_get_day_of_week (&first_sunday);
+        date_generic_zellers_congruence_test (t, NULL,
+            &first_sunday,
+            &first_sunday,
+            7,
+            expected);
+        assert (expected == D_SUNDAY);
+
+        struct date_t date = DATE_DAY(0, 3, 1);
+        expected = date_get_day_of_week (&date);
+        date_generic_zellers_congruence_test (t, NULL,
+            &first_sunday,
+            &date,
+            7,
+            expected);
+
+        date = DATE_DAY(1600, 3, 12);
+        expected = date_get_day_of_week (&date);
+        date_generic_zellers_congruence_test (t, NULL,
+            &first_sunday,
+            &date,
+            7,
+            expected);
+
+        date = DATE_DAY(2000, 1, 1);
+        expected = date_get_day_of_week (&date);
+        date_generic_zellers_congruence_test (t, NULL,
+            &first_sunday,
+            &date,
+            7,
+            expected);
+
+        date = DATE_DAY(2000, 3, 1);
+        expected = date_get_day_of_week (&date);
+        date_generic_zellers_congruence_test (t, NULL,
+            &first_sunday,
+            &date,
+            7,
+            expected);
+
+        parent_test_pop (t);
+    }
+
+    {
+        test_push (t, "Generic Zeller's and day addition ");
+
+        bool success = true;
+        struct date_t start = DATE_DAY(1600, 1, 3);
+        struct date_t end = DATE_DAY(1601, 1, 22);
+        int step = 11;
+
+        enum day_of_week_t start_day_of_week = date_get_day_of_week (&start);
+
+        int day_count = 0;
+        struct date_t curr_date = start;
+        while (success && date_cmp (&curr_date, &end) <= 0) {
+            int equivalence_class = date_generic_zellers_congruence (&start, &curr_date, step);
+
+            char buff[DATE_TIMESTAMP_MAX_LEN];
+            date_write (&curr_date, D_SECOND, false, true, true, true, buff);
+            test_push (t, "Test equivalence class (%s -> %d)", buff, date_get_absolute_day_number (&curr_date));
+
+            if (equivalence_class != 0) {
+                success = false;
+                str_cat_printf (t->error, "Day addition and generic Zeller's equivalence class don't match, got %d.\n", equivalence_class);
+                date_write (&start, D_SECOND, false, true, true, true, buff);
+                str_cat_printf (t->error, " Start: '%s' -> %d\n", buff, date_get_absolute_day_number (&start));
+                date_write (&curr_date, D_SECOND, false, true, true, true, buff);
+                str_cat_printf (t->error, "  Curr: '%s' -> %d\n", buff, date_get_absolute_day_number (&curr_date));
+            }
+
+            test_pop (t, success);
+
+            if (success) {
+                if (day_count % (step*7) == 0) {
+                    success = date_get_day_of_week_test (t, "Test we reached the starting weekday", &curr_date, start_day_of_week);
+                }
+
+                date_add_value_restricted (&curr_date, step, D_DAY);
+                day_count += step;
+            }
+        }
+
+        parent_test_pop (t);
+    }
+
+    {
         test_push (t, "Recurrent event tests");
 
-        char res[DATE_TIMESTAMP_MAX_LEN];
-        struct recurrent_event_t re = {0};
+        date_recurrent_event_test (t, "Saturdays",
+            7, D_DAY, NULL,
+            &DATE_DAY(1908, 1, 4),
 
-        {
-            bool success = true;
-            test_push (t, "Every 7th day");
-            set_recurrent_event (&re, 7, D_DAY, NULL, "1908-1-4");
-            //set_recurrent_event_compact (&re, "_-_-[7]", "1908-01-4");
-            compute_next_occurence (&re, NULL, res);
+            &DATE_DAY (1908, 1, 11));
 
-            char *expected = "1908-1-11";
-            if (strcmp (res, expected) != 0) {
-                str_cat_printf (t->error, "Incorrect next occurence got %s, expected %s\n", res, expected);
-                success = false;
-            }
-            test_pop (t, success);
-        }
+        date_recurrent_event_test (t, "International worker's day",
+            1, D_YEAR, &DATE_ELEMENT_DAY(-1, 5, 1),
+            &DATE_YEAR(1890),
+
+            &DATE_DAY (1891, 5, 1));
+
+        date_recurrent_event_test (t, "Every month",
+            1, D_MONTH, &DATE_ELEMENT_DAY(-1, -1, 15),
+            &DATE_MONTH(2000, 2),
+
+            &DATE_DAY (2000, 3, 15));
+
+        date_recurrent_event_test (t, "Every 2 months",
+            2, D_MONTH, &DATE_ELEMENT_DAY(-1, -1, 20),
+            &DATE_MONTH(2000, 2),
+
+            &DATE_DAY (2000, 4, 20));
+
+        date_recurrent_event_test (t, "Every 2 months starting January",
+            2, D_MONTH, &DATE_ELEMENT_DAY(-1, -1, 20),
+            &DATE_MONTH(2000, 1),
+
+            &DATE_DAY (2000, 3, 20));
 
         parent_test_pop (t);
     }
