@@ -1648,6 +1648,17 @@ void FUNCNAME(TYPE *arr, int n) {                                               
     FUNCNAME ## _user_data (arr,n,NULL);                                          \
 }
 
+// This is a function type to define sorting callbacks. It's not used in the
+// sorting API because in that case the comparison is inlined as a macro. When
+// defining a sorting function using a macro allows requiring users to just
+// define one new fonction (the sorting function) which is less overhead than
+// having to define the sorting function and the comparison function. Still, if
+// we can't hardcode the comparison, for instance because we want it to be
+// configurable at runtime, then we need a callback and a function pointer,
+// that's when we would use the following function type.
+#define GENERIC_COMPARE_CB(name) int name(void* a, void *b, void *user_date)
+typedef GENERIC_COMPARE_CB(generic_compare_t);
+
 typedef struct {
     int origin;
     int key;
