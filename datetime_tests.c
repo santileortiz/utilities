@@ -172,28 +172,6 @@ void date_read_test (struct test_ctx_t *t, char *date_str, struct date_t *expect
     free (buff);
 }
 
-void string_test (struct test_ctx_t *t, char *test_name, char *result, char *expected)
-{
-    bool success = true;
-    test_push (t, "%s (%s)", expected, test_name);
-    if (strcmp (result, expected) != 0) {
-        str_cat_printf (t->error, "Failed string comparison got '%s', expected '%s'\n", result, expected);
-        success = false;
-    }
-    test_pop (t, success);
-}
-
-void int_test (struct test_ctx_t *t, char *test_name, int result, int expected)
-{
-    bool success = true;
-    test_push (t, "%s", test_name);
-    if (result != expected) {
-        str_cat_printf (t->error, "Failed int comparison got %d, expected %d\n", result, expected);
-        success = false;
-    }
-    test_pop (t, success);
-}
-
 void date_write_rfc3339_test (struct test_ctx_t *t, struct date_t *date, char *expected)
 {
     test_push (t, "%s", expected);

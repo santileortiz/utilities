@@ -127,6 +127,62 @@ void test_pop (struct test_ctx_t *tc, bool success)
     }
 }
 
+void test_error_current (struct test_ctx_t *t, char *fmt, ...)
+{
+}
+
+void test_error (struct test_ctx_t *t, char *fmt, ...)
+{
+}
+
+// TODO: Receive printf parameters
+bool test_bool (struct test_ctx_t *t, bool result, char *test_name, ...)
+{
+    bool success = true;
+    test_push (t, "%s", test_name);
+    if (!result) {
+        success = false;
+    }
+    test_pop (t, success);
+
+    return success;
+}
+
+bool test_str (struct test_ctx_t *t, char *test_name, char *result, char *expected)
+{
+    return test_bool(t, strcmp(result, expected) != 0, test_name);
+}
+
+// For the case where it makes sense to use the expected string as start of the test name.
+void test_str_small (struct test_ctx_t *t, char *test_name, char *result, char *expected)
+{
+    if (!test_bool(t, strcmp(result,expected) != 0, "%s (%s)", expected, test_name)) {
+        test_error (t, "Failed string comparison got '%s'", result, expected);
+    }
+}
+
+void string_test (struct test_ctx_t *t, char *test_name, char *result, char *expected)
+{
+    bool success = true;
+    test_push (t, "%s (%s)", expected, test_name);
+    if (strcmp (result, expected) != 0) {
+        str_cat_printf (t->error, "Failed string comparison got '%s', expected '%s'\n", result, expected);
+        success = false;
+    }
+    test_pop (t, success);
+}
+
+void int_test (struct test_ctx_t *t, char *test_name, int result, int expected)
+{
+    bool success = true;
+    test_push (t, "%s", test_name);
+    if (result != expected) {
+        str_cat_printf (t->error, "Failed int comparison got %d, expected %d\n", result, expected);
+        success = false;
+    }
+    test_pop (t, success);
+}
+
 // This is like test_pop but determines fail/success based on the return status
 // of children. If any children test failed this fails, if all of them passed
 // then this passes.
