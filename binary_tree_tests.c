@@ -5,6 +5,8 @@
 
 BINARY_TREE_NEW(str_int, char*, int, strcmp(a,b))
 
+BINARY_TREE_NEW(str_string, string_t, string_t, strcmp(str_data(&a),str_data(&b)))
+
 void binary_tree_sample ()
 {
     struct str_int_tree_t tree = {0};
