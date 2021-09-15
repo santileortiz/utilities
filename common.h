@@ -102,16 +102,70 @@ size_t size;                                              \
 }
 
 // Console color escape sequences
+//
+// To set the style, pass a semicolon-separated list of numbers as the first
+// parameter corresponging to the desired set of styles:
+//
+//     0 - Normal
+//     1 - Bold
+//     2 - Dim
+//     3 - Italic
+//     4 - Underlined
+//     5 - Blinking
+//     7 - Reverse
+//     8 - Invisible
+//
+// for example
+//
+//     ECMA_S_RED(1;5, "Blinking error")
+//
 // TODO: Maybe add a way to detect if the output is a terminal so we don't do
 // anything in that case.
-#define ECMA_RED(str) "\033[1;31m\033[K"str"\033[m\033[K"
-#define ECMA_GREEN(str) "\033[1;32m\033[K"str"\033[m\033[K"
-#define ECMA_YELLOW(str) "\033[1;33m\033[K"str"\033[m\033[K"
-#define ECMA_BLUE(str) "\033[1;34m\033[K"str"\033[m\033[K"
-#define ECMA_MAGENTA(str) "\033[1;35m\033[K"str"\033[m\033[K"
-#define ECMA_CYAN(str) "\033[1;36m\033[K"str"\033[m\033[K"
-#define ECMA_WHITE(str) "\033[1;37m\033[K"str"\033[m\033[K"
-#define ECMA_BOLD(str) "\033[1m\033[K"str"\033[m\033[K"
+//
+#define ECMA_S_RED(s,str)     "\033["#s";31m\033[K"str"\033[m\033[K"
+#define ECMA_S_GREEN(s,str)   "\033["#s";32m\033[K"str"\033[m\033[K"
+#define ECMA_S_YELLOW(s,str)  "\033["#s";33m\033[K"str"\033[m\033[K"
+#define ECMA_S_BLUE(s,str)    "\033["#s";34m\033[K"str"\033[m\033[K"
+#define ECMA_S_MAGENTA(s,str) "\033["#s";35m\033[K"str"\033[m\033[K"
+#define ECMA_S_CYAN(s,str)    "\033["#s";36m\033[K"str"\033[m\033[K"
+#define ECMA_S_WHITE(s,str)   "\033["#s";37m\033[K"str"\033[m\033[K"
+#define ECMA_S_DEFAULT(s,str) "\033["#s";39m\033[K"str"\033[m\033[K"
+
+// The most common style seems to be bold
+#define ECMA_DEFAULT(str) ECMA_S_DEFAULT(1,str)
+#define ECMA_RED(str) ECMA_S_RED(1,str)
+#define ECMA_GREEN(str) ECMA_S_GREEN(1,str)
+#define ECMA_YELLOW(str) ECMA_S_YELLOW(1,str)
+#define ECMA_BLUE(str) ECMA_S_BLUE(1,str)
+#define ECMA_MAGENTA(str) ECMA_S_MAGENTA(1,str)
+#define ECMA_CYAN(str) ECMA_S_CYAN(1,str)
+#define ECMA_WHITE(str) ECMA_S_WHITE(1,str)
+
+#define ECMA_S_RGB(s,r,g,b,str) "\033["#s";38;2;"#r";"#g";"#b"m"str"\033[m\033[K"
+#define ECMA_RGB(r,g,b,str) ECMA_S_RGB(1,r,g,b,str)
+
+#define ECMA_S_GRAY(s,v,str) "\033["#s";38;2;"#v";"#v";"#v"m"str"\033[m\033[K"
+#define ECMA_GRAY(v,str) ECMA_S_GRAY(1,v,str)
+
+#define ESC_COLOR_BEGIN_STR(s,color_str)     "\033["#s";"color_str"m\033[K"
+#define ESC_COLOR_BEGIN(s,color_int)     "\033["#s";"#color_int"m\033[K"
+#define ESC_COLOR_END                "\033[m\033[K"
+
+#define ESC_S_COLOR(style,color_int,str)     "\033["#style";"#color_int"m\033[K"str"\033[m\033[K"
+#define ESC_COLOR_RED            31
+#define ESC_COLOR_GREEN          32
+#define ESC_COLOR_YELLOW         33
+#define ESC_COLOR_BLUE           34
+#define ESC_COLOR_MAGENTA        35
+#define ESC_COLOR_CYAN           36
+#define ESC_COLOR_WHITE          37
+#define ESC_COLOR_DEFAULT        39
+
+// TODO: The following feels like should work, but it doesn't:
+//
+//        ESC_S_COLOR(style,ESC_COLOR_RED,str)
+//
+// Need to make double-level macros for for this.
 
 ////////////
 // STRINGS
@@ -529,6 +583,25 @@ void str_cat_indented_c (string_t *str1, char *c_str, int num_spaces)
     }
 }
 
+GCC_PRINTF_FORMAT(3, 4)
+void str_cat_indented_printf (string_t *str, int num_spaces, char *format, ...)
+{
+    va_list args1, args2;
+    va_start (args1, format);
+    va_copy (args2, args1);
+
+    size_t size = vsnprintf (NULL, 0, format, args1) + 1;
+    va_end (args1);
+
+    char *tmp_str = malloc (size);
+    vsnprintf (tmp_str, size, format, args2);
+    va_end (args2);
+
+    str_cat_indented_c (str, tmp_str, num_spaces);
+
+    free (tmp_str);
+}
+
 void printf_indented (char *str, int num_spaces)
 {
     char *c = str;
@@ -603,6 +676,83 @@ _define_str_printf_func(str_cat_printf, strn_cat_c)
 
 #undef _define_str_printf_func
 
+void str_replace(string_t *str, char *find, char *replace, int *count)
+{
+   size_t len_find = strlen(find);
+   size_t len_replace = strlen(replace);
+   int count_l = 0;
+
+   char *s,*p,*q;
+
+   s = strstr(str_data(str), find);
+   if (s == NULL) {
+       if (count != NULL) *count = 0;
+       return;
+   }
+
+   do {
+      ++count_l;
+      s = strstr(s + len_find, find);
+   } while (s != NULL);
+   if (count != NULL) *count = count_l;
+
+   // TODO: I think it should be possible to do the replacements in-place. When
+   // the replacement is bigger than the search (the string grows) do
+   // replacements right-to-left, ig the replacement is smaller (the string
+   // shrinks), do the replacements lef-to-right.
+   char *original = NULL;
+   ssize_t original_len = str_len (str);
+   {
+       original = (char*)malloc (original_len+1);
+       memcpy (original, str_data(str), original_len+1);
+   }
+   if (original == NULL) return;
+
+   // Don't keep content because we already duplicated it above
+   str_maybe_grow (str, str_len(str) + count_l * (len_replace - len_find), false);
+
+   p = str_data(str);
+   q = p;
+   s = original;
+   for (;;) {
+      char *t = strstr(s, find);
+      if (t == NULL) {
+#if 1
+         strcpy(q,s);
+         assert(strlen(p) == original_len + count_l*(len_replace-len_find));
+#else
+         // FIXME: Why does this not work when str is not small?. I get some
+         // invalid free() when regrowing the string. It fails in the following
+         // case:
+         //
+         // str: "&lt;https://people.eecs.berkeley.edu/~luca/cs174/byzantine.pdf>"
+         // find: ">"
+         // replace: "&gt;"
+
+         strncpy(q,s,original_len+count_l*(len_replace-len_find)+1);
+         if (strlen(p) != original_len + count_l*(len_replace-len_find)) {
+             printf ("strlen(p): %ld\n", strlen(p));
+             printf ("exp: %ld\n", original_len + count_l*(len_replace-len_find));
+             printf ("original: %s\n", original);
+             printf ("original_len: %ld\n", original_len);
+             printf ("find: %s\n", find);
+             printf ("replace: %s\n", replace);
+             printf ("q: '%s'\n", q);
+             printf ("s: '%s'\n", s);
+             printf ("p (result): '%s'\n", p);
+             printf ("\n");
+         }
+#endif
+         return;
+      }
+      memcpy(q, s, t-s);
+      q += t-s;
+      memcpy(q, replace, len_replace);
+      q += len_replace;
+      s = t + len_find;
+   }
+}
+
 // NOTE: Caller must be sure src is null termintated and dst has the correct
 // length allocated.
 int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
@@ -626,6 +776,41 @@ int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
     *dst = '\0';
 
     return replacement_cnt;
+}
+
+void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
+{
+    if (c_str == NULL || *c_str == '\n') return;
+
+    string_t result = {0};
+    str_set_printf (&result, ESC_COLOR_BEGIN_STR(0, "%d") "%s" ESC_COLOR_END, esc_color, c_str);
+
+    string_t buff = {0};
+    str_set_printf (&buff, ECMA_GRAY(75, "───┤") ESC_COLOR_BEGIN_STR(0, "%d"), esc_color);
+    str_replace (&result, "\t",  str_data(&buff), NULL);
+
+    str_set_printf (&buff, ECMA_GRAY(75, "•") ESC_COLOR_BEGIN_STR(0, "%d"), esc_color);
+    str_replace (&result, " ",  str_data(&buff), NULL);
+
+    str_set_printf (&buff, ECMA_GRAY(75, "↲\n") ESC_COLOR_BEGIN_STR(0, "%d"), esc_color);
+    str_replace (&result, "\n", str_data(&buff), NULL);
+
+    if (c_str[strlen(c_str) - 1] != '\n') {
+        str_cat_c (&result,ECMA_GRAY(75, "∎") "\n");
+    }
+
+    str_cat_indented_printf (str, curr_indent, "%s", str_data(&result));
+
+    str_free (&buff);
+    str_free (&result);
+}
+
+void prnt_debug_string (char *str)
+{
+    string_t buff = {0};
+    str_cat_debugstr (&buff, 0, ESC_COLOR_DEFAULT, str);
+    printf ("%s", str_data(&buff));
+    str_free (&buff);
 }
 
 //////////////////////
@@ -717,6 +902,94 @@ bool is_end_of_line (const char *c)
     }
     return *c == '\n';
 }
+
+static inline
+bool char_in_str (char c, char *str)
+{
+    while (*str != '\0') {
+        if (*str == c) {
+            return true;
+        }
+
+        str++;
+    }
+
+    return false;
+}
+
+////////////////////
+// SHALLOW STRINGS
+//
+// A string type that doesn't allocate any memory, instead it only points to
+// another string and stores a length.
+typedef struct {
+    char *s;
+    uint32_t len;
+} sstring_t;
+#define SSTRING(s,len) ((sstring_t){s,len})
+#define SSTRING_C(s) SSTRING(s,strlen(s))
+
+static inline
+sstring_t sstr_set (char *s, uint32_t len)
+{
+    return SSTRING(s, len);
+}
+
+static inline
+sstring_t sstr_trim (sstring_t str)
+{
+    if (str.len > 0) {
+        while (is_space (str.s) || *(str.s) == '\n') {
+            str.s++;
+            str.len--;
+        }
+
+        while (is_space (str.s + str.len - 1) || str.s[str.len - 1] == '\n') {
+            str.len--;
+        }
+    }
+
+    return str;
+}
+
+static inline
+void sstr_extend (sstring_t *str1, sstring_t *str2)
+{
+    assert (str2->s != NULL);
+
+    if (str1->s == NULL) {
+        str1->s = str2->s;
+        str1->len = str2->len;
+
+    } else {
+        assert (str1->s + str1->len == str2->s);
+        str1->len += str2->len;
+    }
+}
+
+bool is_empty_line (sstring_t line)
+{
+    int count = 0;
+    while (is_space(line.s + count)) {
+        count++;
+    }
+
+    return line.s[count] == '\n' || count == line.len;
+}
+
+void prnt_debug_sstring (sstring_t *str)
+{
+    string_t s = {0};
+    strn_set (&s, str->s, str->len);
+
+    string_t buff = {0};
+    str_cat_debugstr (&buff, 0, ESC_COLOR_DEFAULT, str_data(&s));
+    printf ("%s", str_data(&buff));
+
+    str_free (&buff);
+    str_free (&s);
+}
+
 
 // Set POSIX locale while storing the previous one. Useful while calling strtod
 // and you know the decimal separator will always be '.', and you don't want it
@@ -2401,7 +2674,7 @@ char* pprintf (mem_pool_t *pool, const char *format, ...)
 // pool gets destroyed.
 ON_DESTROY_CALLBACK (destroy_pooled_str)
 {
-    string_t *str;
+    string_t *str = NULL;
     if (clsr != NULL) {
         assert (allocated == NULL);
         str = (string_t*)clsr;
@@ -2609,6 +2882,13 @@ char* abs_path (char *path, mem_pool_t *pool)
     return absolute_path;
 }
 
+void str_set_path (string_t *str, char *path)
+{
+    char *user_path = resolve_user_path (path, NULL);
+    str_set (str, user_path);
+    free (user_path);
+}
+
 void file_write (int file, void *pos,  ssize_t size)
 {
     if (write (file, pos, size) < size) {
@@ -2660,6 +2940,8 @@ bool full_file_write (const void *data, ssize_t size, const char *path)
     return failed;
 }
 
+// TODO: Make this silent, then we will be able to just call it, without needing
+// to make sure the file exists beforehand.
 char* full_file_read (mem_pool_t *pool, const char *path, uint64_t *len)
 {
     bool success = true;
@@ -2719,6 +3001,20 @@ char* full_file_read (mem_pool_t *pool, const char *path, uint64_t *len)
         free (expanded_path);
     }
     return retval;
+}
+
+char* full_file_read_no_trailing_newline (mem_pool_t *pool, const char *path, uint64_t *len)
+{
+    size_t l_len;
+    if (len == NULL) len = &l_len;
+
+    char *data = full_file_read (pool, path, len);
+
+    char *p = data + *len;
+    if (*p == '\0') p--;
+    if (*p == '\n') *p = '\0';
+
+    return data;
 }
 
 bool path_exists (char *path)
@@ -3367,7 +3663,7 @@ type *new_node;                                              \
 // TODO: Can we check at compile time that type is a pointer? Right now if users
 // forget the *, they get a long list of errors. Maybe a static assert would
 // show a nicer error message?.
-#define LINKED_LIST_FOR(type, varname,headname)              \
+#define LINKED_LIST_FOR(type,varname,headname)               \
 type varname = headname;                                     \
 for (; varname != NULL; varname = varname->next)
 
@@ -3513,6 +3809,12 @@ ON_DESTROY_CALLBACK (pooled_free_call)
                                                                             \
     (head_name)[(head_name ## _len)++] = element;                           \
 }
+
+#define DYNAMIC_ARRAY_POP_LAST(head_name) \
+head_name[--(head_name ## _len)]
+
+#define DYNAMIC_ARRAY_GET_LAST(head_name) \
+head_name[head_name ## _len - 1]
 
 // In some cases we can't assign to a type by assigning to it, for example in
 // the case we are storing string_t structures, if we assign an empty string the
