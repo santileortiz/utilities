@@ -2,6 +2,9 @@
  * Copyright (C) 2020 Santiago León O.
  */
 
+// Required flags
+//  gcc: -lrt
+
 // These are required for the CRASH_TEST() and CRASH_TEST_AND_RUN() macros.
 // They also require adding -lrt as build flag.
 // TODO: How can we make this detail easily discoverable by users? Where to
@@ -30,6 +33,7 @@ struct test_ctx_t {
 
     string_t *error;
     bool last_test_success;
+    struct test_t *last_test;
 
     // By default results of child tests are only shown if the parent test
     // failed. If the following is true, then all child test results will be
@@ -50,8 +54,23 @@ void test_ctx_destroy (struct test_ctx_t *tc)
 }
 
 GCC_PRINTF_FORMAT(2, 3)
-void test_push (struct test_ctx_t *tc, char *name_format, ...)
+void test_push (struct test_ctx_t *tc, char *fmt, ...)
 {
+    if (tc->last_test != NULL) {
+        if (tc->show_all_children || !tc->last_test_success) {
+            str_cat_indented (&tc->last_test->output, &tc->last_test->error, TEST_INDENT);
+            // TODO: Should this be indented?
+            // :indented_children_cat
+            str_cat (&tc->last_test->output, &tc->last_test->children);
+        }
+
+        if (tc->test_stack) {
+            str_cat_indented (&tc->test_stack->children, &tc->last_test->output, TEST_INDENT);
+        }
+    }
+
+    tc->last_test = NULL;
+
     struct test_t *test;
     if (tc->test_fl == NULL) {
         LINKED_LIST_PUSH_NEW (&tc->pool, struct test_t, tc->test_stack, new_test);
@@ -75,17 +94,23 @@ void test_push (struct test_ctx_t *tc, char *name_format, ...)
     tc->error = &test->error;
 
     {
-        PRINTF_INIT(name_format, name_size, vargs);
-        str_maybe_grow (&test->output, name_size-1, false);
+        PRINTF_INIT(fmt, final_size, vargs);
+        str_maybe_grow (&test->output, final_size-1, false);
         char *dst = str_data(&test->output);
-        PRINTF_SET (dst, name_size, name_format, vargs);
+        PRINTF_SET (dst, final_size, fmt, vargs);
 
         str_cat_c (&test->output, " ");
+        // TODO: Don't count ECMA escape sequences in the length.
         while (str_len(&test->output) < TEST_NAME_WIDTH-1) {
             str_cat_c (&test->output, ".");
         }
         str_cat_c (&test->output, " ");
     }
+}
+
+void test_push_c (struct test_ctx_t *tc, char *test_name)
+{
+    test_push (tc, "%s", test_name);
 }
 
 // TODO: Maybe move to common.h?
@@ -94,12 +119,28 @@ void test_push (struct test_ctx_t *tc, char *name_format, ...)
 
 void test_pop (struct test_ctx_t *tc, bool success)
 {
+    if (tc->last_test != NULL) {
+        if (tc->show_all_children || !tc->last_test_success) {
+            str_cat_indented (&tc->last_test->output, &tc->last_test->error, TEST_INDENT);
+            // TODO: Should this be indented?
+            // :indented_children_cat
+            str_cat (&tc->last_test->output, &tc->last_test->children);
+        }
+
+        if (tc->test_stack) {
+            str_cat_indented (&tc->test_stack->children, &tc->last_test->output, TEST_INDENT);
+        }
+    }
+
     struct test_t *curr_test = tc->test_stack;
     tc->test_stack = tc->test_stack->next;
-    curr_test->next = NULL;
     tc->last_test_success = success;
 
-    LINKED_LIST_PUSH (tc->test_fl, curr_test);
+    if (tc->last_test != NULL) {
+        curr_test->next = NULL;
+        LINKED_LIST_PUSH (tc->test_fl, tc->last_test);
+    }
+    tc->last_test = curr_test;
 
     if (tc->test_stack != NULL) {
         tc->test_stack->children_success = tc->test_stack->children_success && success;
@@ -120,47 +161,77 @@ void test_pop (struct test_ctx_t *tc, bool success)
         str_cat (&curr_test->output, &curr_test->children);
     }
 
-    if (tc->test_stack) {
-        str_cat_indented (&tc->test_stack->children, &curr_test->output, TEST_INDENT);
-    } else {
+    if (!tc->test_stack) {
         str_cat (&tc->result, &curr_test->output);
     }
 }
 
+GCC_PRINTF_FORMAT(2, 3)
 void test_error_current (struct test_ctx_t *t, char *fmt, ...)
 {
+    PRINTF_INIT(fmt, final_size, vargs);
+    str_maybe_grow (t->error, final_size, false);
+    char *dst = str_data(t->error);
+    PRINTF_SET (dst, final_size, fmt, vargs);
+
+    // If there is a missing newline add it.
+    // NOTE: str_maybe_grow() was passed final_size which is oversized by 1 to
+    // account for the possibility of adding a '\n' character here. Normally we
+    // would've called it with 'final_size-1' because final_size does count the
+    // null byte and str_maybe_grow() expects length withoug counting it.
+    // :oversized_allocation_for_newline
+    if (dst[final_size-2] != '\n') {
+        dst[final_size-1] = '\n';
+        dst[final_size] = '\0';
+    }
 }
 
+GCC_PRINTF_FORMAT(2, 3)
 void test_error (struct test_ctx_t *t, char *fmt, ...)
 {
-}
+    PRINTF_INIT(fmt, final_size, vargs);
+    str_maybe_grow (&t->last_test->error, final_size, false);
+    char *dst = str_data(&t->last_test->error);
+    PRINTF_SET (dst, final_size, fmt, vargs);
 
-// TODO: Receive printf parameters
-bool test_bool (struct test_ctx_t *t, bool result, char *test_name, ...)
-{
-    bool success = true;
-    test_push (t, "%s", test_name);
-    if (!result) {
-        success = false;
+    // :oversized_allocation_for_newline
+    if (dst[final_size-2] != '\n') {
+        dst[final_size-1] = '\n';
+        dst[final_size] = '\0';
     }
-    test_pop (t, success);
-
-    return success;
 }
 
-bool test_str (struct test_ctx_t *t, char *test_name, char *result, char *expected)
+void test_error_c (struct test_ctx_t *t, char *error_msg)
 {
-    return test_bool(t, strcmp(result, expected) != 0, test_name);
+    test_error (t, "%s", error_msg);
+}
+
+bool test_bool (struct test_ctx_t *t, bool result)
+{
+    test_pop (t, result);
+    return result;
+}
+
+bool test_str (struct test_ctx_t *t, char *result, char *expected)
+{
+    return test_bool(t, strcmp(result, expected) == 0);
+}
+
+bool test_int (struct test_ctx_t *t, int result, int expected)
+{
+    return test_bool(t, result == expected);
 }
 
 // For the case where it makes sense to use the expected string as start of the test name.
 void test_str_small (struct test_ctx_t *t, char *test_name, char *result, char *expected)
 {
-    if (!test_bool(t, strcmp(result,expected) != 0, "%s (%s)", expected, test_name)) {
-        test_error (t, "Failed string comparison got '%s'", result, expected);
+    test_push (t, "%s (%s)", expected, test_name);
+    if (test_bool (t, strcmp(result,expected) != 0)) {
+        test_error (t, "Failed string comparison got '%s', expected '%s'", result, expected);
     }
 }
 
+// TODO: Remove...
 void string_test (struct test_ctx_t *t, char *test_name, char *result, char *expected)
 {
     bool success = true;
@@ -172,6 +243,7 @@ void string_test (struct test_ctx_t *t, char *test_name, char *result, char *exp
     test_pop (t, success);
 }
 
+// TODO: Remove...
 void int_test (struct test_ctx_t *t, char *test_name, int result, int expected)
 {
     bool success = true;
