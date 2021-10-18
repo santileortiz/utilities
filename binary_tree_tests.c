@@ -135,5 +135,5 @@ void binary_tree_tests (struct test_ctx_t *t)
         test_pop (t, success);
     }
 
-    parent_test_pop (t);
+    test_pop_parent (t);
 }

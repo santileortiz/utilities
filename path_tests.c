@@ -62,10 +62,10 @@ void path_tests (struct test_ctx_t *t)
         user_path_expanded (t, home_path, "Downloads/.//../file.docx", &pool);
 
         str_free (&expected);
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     mem_pool_destroy (&pool);
 
-    parent_test_pop (t);
+    test_pop_parent (t);
 }

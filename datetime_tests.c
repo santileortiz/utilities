@@ -206,7 +206,7 @@ void date_write_rfc3339_test (struct test_ctx_t *t, struct date_t *date, char *e
     string_test (t, "Unknown UTC offset", buff, str_data(&test_date));
 
     str_free (&test_date);
-    parent_test_pop (t);
+    test_pop_parent (t);
 }
 
 void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_time_duration_t precision, char *expected)
@@ -259,7 +259,7 @@ void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_
     }
 
     str_free (&test_date);
-    parent_test_pop (t);
+    test_pop_parent (t);
 }
 
 #define DATE_STR_L(date, date_str)       \
@@ -286,7 +286,7 @@ void date_operation_test (struct test_ctx_t *t, struct date_t *d1, int value, en
     date_add_value (d, -value, unit);
     date_compare_test (t, "d2 - v == d1", d, d1);
 
-    parent_test_pop (t);
+    test_pop_parent (t);
 }
 
 bool date_get_day_of_week_test (struct test_ctx_t *t, char *test_name, struct date_t *date, enum day_of_week_t expected)
@@ -367,7 +367,7 @@ void date_recurrent_event_test (struct test_ctx_t *t, char *test_name,
         date_compare_test (t, "Compute next", &result, expected);
     }
 
-    parent_test_pop (t);
+    test_pop_parent (t);
 }
 
 void datetime_tests (struct test_ctx_t *t)
@@ -409,7 +409,7 @@ void datetime_tests (struct test_ctx_t *t)
         date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, true, 0, 1);
         different_date_compare_test (t, "Different time offset minute", d1, d2);
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -478,7 +478,7 @@ void datetime_tests (struct test_ctx_t *t)
         invalid_date_read_test (t, "1900-08-07 02:03:04.125-05");
         invalid_date_read_test (t, "1900-08-07 02:03:04.125-");
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -537,7 +537,7 @@ void datetime_tests (struct test_ctx_t *t)
         //    120, D_MINUTE,
         //    DATE_P(1900, 1, 1, 2, 0, 0, 0.0, false, 0, 0));
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -576,7 +576,7 @@ void datetime_tests (struct test_ctx_t *t)
         date_to_utc_test (t, "1990-12-31T15:59:60-08:00",
                              "1990-12-31T23:59:60Z");
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -624,7 +624,7 @@ void datetime_tests (struct test_ctx_t *t)
         valid_date_read_test   (t, "2015-07-01 03:29:60+03:30");
         invalid_date_read_test (t, "2015-07-01 03:29:60Z");
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -655,7 +655,7 @@ void datetime_tests (struct test_ctx_t *t)
         date->month = -1;
         date_write_rfc3339_test (t, date, "1900-01-01T00:00:00");
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -673,7 +673,7 @@ void datetime_tests (struct test_ctx_t *t)
         date_write_test (t, date, D_MONTH,  "1900-08");
         date_write_test (t, date, D_YEAR,   "1900");
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -698,7 +698,7 @@ void datetime_tests (struct test_ctx_t *t)
                                    &now,
                                    local_time.tm_wday);
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -745,7 +745,7 @@ void datetime_tests (struct test_ctx_t *t)
             7,
             expected);
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -788,7 +788,7 @@ void datetime_tests (struct test_ctx_t *t)
             }
         }
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
     {
@@ -824,8 +824,8 @@ void datetime_tests (struct test_ctx_t *t)
 
             &DATE_DAY (2000, 3, 20));
 
-        parent_test_pop (t);
+        test_pop_parent (t);
     }
 
-    parent_test_pop (t);
+    test_pop_parent (t);
 }

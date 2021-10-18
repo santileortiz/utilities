@@ -429,5 +429,5 @@ void linked_list_tests (struct test_ctx_t *t)
 
     mem_pool_destroy (&pool);
 
-    parent_test_pop (t);
+    test_pop_parent (t);
 }

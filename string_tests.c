@@ -111,5 +111,5 @@ void string_tests (struct test_ctx_t *t)
         }
     }
 
-    parent_test_pop (t);
+    test_pop_parent (t);
 }
