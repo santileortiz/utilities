@@ -24,14 +24,14 @@ def expand_macro ():
     """
 
     # TODO: Support #include?
-    args = get_cli_rest ()
-    if not args or len(args) != 3:
+    args = get_cli_no_opt ()
+    if not args or len(args) != 2:
         print ('Usage:')
         print ('pymk.py expand_macro <file path> <macro call>')
         return
     
-    fpath = args[1]
-    macro = args[2]
+    fpath = args[0]
+    macro = args[1]
     macro_name = macro.split('(')[0].strip()
 
     f = open (fpath)
@@ -43,7 +43,7 @@ def expand_macro ():
     macro_code = ''
     for line in f:
         if line.startswith('#define'):
-            if line.split()[1].startswith(macro_name):
+            if line.split()[1].startswith(macro_name + '('):
                 start = True
 
         if start:
