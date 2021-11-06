@@ -1873,9 +1873,9 @@ void FUNCNAME(TYPE *arr, int n) {                                               
 
 // Stable templetized merge sort for arrays
 //
-// CMP_A_TO_B is an expression where a and b are pointers to _arr_, it's equal
-// to -1, 0 or 1 if *a and *b compare as less than, equal to or grater than
-// respectively.
+// CMP_A_TO_B is an expression where a and b are pointers to _arr_. Its value is
+// less than, equal or greater than 0 if *a and *b compare as less than, equal
+// to or grater than respectively.
 //
 // The reasoning behind this being separate from templ_sort() is that a stable
 // sort requires a 3-way comparison, which makes it a little more inconvinient
@@ -1892,7 +1892,7 @@ void FUNCNAME ## _user_data (TYPE *arr, int n, void *user_data)                 
         TYPE *a = &arr[1];                                                        \
         TYPE *b = &arr[0];                                                        \
         int c = CMP_A_TO_B;                                                       \
-        if (c == -1) {                                                            \
+        if (c < 0) {                                                              \
             swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));                        \
         }                                                                         \
                                                                                   \

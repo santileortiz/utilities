@@ -108,8 +108,7 @@ bool test_linked_list_sort (struct sort_test_struct_t *list, size_t list_len, st
 // To see how templ_sort is not stable you can switch the definition of
 // stable_struct_sort() to use the non stable algorithm.
 #if 1
-templ_sort_stable (stable_struct_sort, struct sort_test_struct_t,
-                   a->first <= b->first ? (a->first < b->first ? -1 : 0) : 1);
+templ_sort_stable (stable_struct_sort, struct sort_test_struct_t, a->first - b->first);
 #else
 templ_sort (stable_struct_sort, struct sort_test_struct_t, a->first < b->first);
 #endif
