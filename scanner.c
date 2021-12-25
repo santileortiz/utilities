@@ -118,7 +118,7 @@ bool scanner_float (struct scanner_t *scnr, float *value)
     // Don't accept leading spaces.
     // NOTE: We don't accept floats not starting with a digit like .5, INF or
     // NAN. But we do accept hexadecimal floats like 0x1.Cp2
-    if (!isdigit (*scnr->pos)) {
+    if (!(isdigit (*scnr->pos) || *scnr->pos == '-')) {
         return false;
     }
 
@@ -148,7 +148,7 @@ bool scanner_double (struct scanner_t *scnr, double *value)
     // Don't accept leading spaces.
     // NOTE: We don't accept floats not starting with a digit like .5, INF or
     // NAN. But we do accept hexadecimal floats like 0x1.Cp2
-    if (!isdigit (*scnr->pos)) {
+    if (!(isdigit (*scnr->pos) || *scnr->pos == '-')) {
         return false;
     }
 
