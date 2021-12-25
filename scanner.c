@@ -76,7 +76,7 @@ bool scanner_output_error (struct scanner_t *scnr, string_t *error_out)
             free (scnr->error_message);
         } else {
             str_cat_printf (error_out,
-                            ECMA_BOLD("%s ") ECMA_RED("error:") " %s\n",
+                            ECMA_S_DEFAULT(1, "%s ") ECMA_RED("error:") " %s\n",
                             location_str, scnr->error_message);
         }
         has_no_error = false;
