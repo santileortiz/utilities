@@ -896,7 +896,7 @@ void date_write (struct date_t *date, enum reference_time_duration_t precision, 
     }
 
     if (!no_utc_offset && (!optional_utc_offset || date->is_set_utc_offset)) {
-        if (precision < D_HOUR) {
+        if (curr_reference_duration <= D_HOUR) {
             sprintf (pos, "T");
             pos++;
         }

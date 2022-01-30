@@ -677,6 +677,36 @@ void datetime_tests (struct test_ctx_t *t)
     }
 
     {
+        test_push (t, "Date write (available and requested precision mismatch)");
+        struct date_t _date = {0};
+        struct date_t *date = &_date;
+
+        char buff[DATE_TIMESTAMP_MAX_LEN];
+
+        date_set (date, 1900, 8, 7, 2, 3, -1, -1, true,-6, 30);
+        date_write_compact (date, D_SECOND, buff);
+        string_test (t, "Minute Precision", buff, "1900-8-7T2:3-06:30");
+
+        date_set (date, 1900, 8, 7, 2, -1, -1, -1, true,-6, 30);
+        date_write_compact (date, D_SECOND, buff);
+        string_test (t, "Hour Precision", buff, "1900-8-7T2-06:30");
+
+        date_set (date, 1900, 8, 7, -1, -1, -1, -1, true,-6, 30);
+        date_write_compact (date, D_SECOND, buff);
+        string_test (t, "Day Precision", buff, "1900-8-7T-06:30");
+
+        date_set (date, 1900, 8, -1, -1, -1, -1, -1, true,-6, 30);
+        date_write_compact (date, D_SECOND, buff);
+        string_test (t, "Month Precision", buff, "1900-8T-06:30");
+
+        date_set (date, 1900, -1, -1, -1, -1, -1, -1, true,-6, 30);
+        date_write_compact (date, D_SECOND, buff);
+        string_test (t, "Year Precision", buff, "1900T-06:30");
+
+        test_pop_parent (t);
+    }
+
+    {
         test_push (t, "Get day of week");
 
         date_get_day_of_week_test (t, NULL,
