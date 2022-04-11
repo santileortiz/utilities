@@ -64,50 +64,62 @@ void string_tests (struct test_ctx_t *t)
 
         mem_pool_destroy (&pool);
 
+        test_push (t, "cstr_rstrip");
         {
-            {
-                bool success = true;
-                test_push (t, "cstr_rstrip");
-                char str[] = "Hey there    ";
-                cstr_rstrip (str);
-                if (strcmp (str, "Hey there") != 0) { 
-                    success = false;
-                }
-                test_pop (t, success);
-            }
+            char str[] = "  Hey there    ";
+            cstr_rstrip (str);
+            test_push (t, "normal usage");
+            test_str (t, str, "  Hey there");
+        }
 
-            {
-                bool success = true;
-                test_push (t, "cstr_rstrip (all spaces)");
-                char str[] = "    ";
-                cstr_rstrip (str);
-                if (strcmp (str, "") != 0) { 
-                    success = false;
-                }
-                test_pop (t, success);
-            }
+        {
+            char str[] = "    ";
+            cstr_rstrip (str);
+            test_push (t, "all spaces");
+            test_str (t, str, "");
+        }
 
-            {
-                bool success = true;
-                test_push (t, "cstr_rstrip (empty string)");
-                char str[] = "";
-                cstr_rstrip (str);
-                if (strcmp (str, "") != 0) { 
-                    success = false;
-                }
-                test_pop (t, success);
-            }
+        {
+            char str[] = "";
+            cstr_rstrip (str);
+            test_push (t, "empty string");
+            test_str (t, str, "");
+        }
 
-            {
-                bool success = true;
-                test_push (t, "cstr_rstrip (no right spaces)");
-                char str[] = "something";
-                cstr_rstrip (str);
-                if (strcmp (str, "something") != 0) { 
-                    success = false;
-                }
-                test_pop (t, success);
-            }
+        {
+            char str[] = "something";
+            cstr_rstrip (str);
+            test_push (t, "no spaces");
+            test_str (t, str, "something");
+        }
+        test_pop_parent (t);
+
+        {
+            test_push (t, "str_strip");
+
+            string_t str = {0};
+
+            str_set(&str, "  Hey there    ");
+            str_strip (&str);
+            test_push (t, "normal usage");
+            test_str_e (t, str_data(&str), "Hey there");
+
+            str_set(&str, "    ");
+            test_push (t, "all spaces");
+            str_strip (&str);
+            test_str (t, str_data(&str), "");
+
+            str_set(&str, "");
+            test_push (t, "empty string");
+            str_strip (&str);
+            test_str (t, str_data(&str), "");
+
+            str_set(&str, "something");
+            test_push (t, "no spaces");
+            str_strip (&str);
+            test_str (t, str_data(&str), "something");
+
+            test_pop_parent (t);
         }
     }
 

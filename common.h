@@ -307,6 +307,21 @@ char* str_non_small_alloc (string_t *str, size_t len)
 }
 
 static inline
+void str_shrink (string_t *str, size_t len)
+{
+    assert (len <= str_len(str));
+
+    if (!str_is_small(str)) {
+        str->len = len;
+
+    } else {
+        str->len_small = 2*len;
+    }
+
+    str_data(str)[len] = '\0';
+}
+
+static inline
 void str_maybe_grow (string_t *str, size_t len, bool keep_content)
 {
     if (!str_is_small(str)) {
@@ -536,6 +551,22 @@ void strn_cat_c (string_t *dest, const char *src, size_t len)
     dest_data[total_len] = '\0';
 }
 
+// TODO: This most likely doesn't have good performance. We are potentially
+// allocating a string on each iteration.
+// @performance
+void str_cat_char (string_t *str, char c, int times)
+{
+    for (int i=0; i<times; i++) {
+        strn_cat_c (str, &c, 1);
+    }
+}
+
+char str_last (string_t *str)
+{
+    assert (str_len(str) > 0);
+    return str_data(str)[str_len(str)-1];
+}
+
 void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
 {
     if (str_len(str2) == 0) {
@@ -550,9 +581,7 @@ void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
     while (c && *c) {
         if (*c == '\n' && *(c+1) != '\n' && *(c+1) != '\0') {
             strn_cat_c (str1, "\n", 1);
-            for (int i=0; i<num_spaces; i++) {
-                strn_cat_c (str1, " ", 1);
-            }
+            str_cat_char (str1, ' ', num_spaces);
 
         } else {
             strn_cat_c (str1, c, 1);
@@ -563,18 +592,22 @@ void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
 
 void str_cat_indented_c (string_t *str1, char *c_str, int num_spaces)
 {
+    // Avoid creating "empty" lines that just contain indentation, or adding
+    // spaces where an empty string (nothing) is supposed to be concatenated. If
+    // it's necessary to just concatenate the indentation spaces, better use
+    // str_cat_char() directly.
     if (*c_str == '\0') return;
 
-    for (int i=0; i<num_spaces; i++) {
-        strn_cat_c (str1, " ", 1);
+    if (str_len(str1) > 0 && str_last(str1) == '\n') {
+        for (int i=0; i<num_spaces; i++) {
+            strn_cat_c (str1, " ", 1);
+        }
     }
 
     while (c_str && *c_str) {
         if (*c_str == '\n' && *(c_str+1) != '\n' && *(c_str+1) != '\0') {
             strn_cat_c (str1, "\n", 1);
-            for (int i=0; i<num_spaces; i++) {
-                strn_cat_c (str1, " ", 1);
-            }
+            str_cat_char (str1, ' ', num_spaces);
 
         } else {
             strn_cat_c (str1, c_str, 1);
@@ -623,12 +656,6 @@ void printf_indented (char *str, int num_spaces)
         }
         c++;
     }
-}
-
-char str_last (string_t *str)
-{
-    assert (str_len(str) > 0);
-    return str_data(str)[str_len(str)-1];
 }
 
 GCC_PRINTF_FORMAT(3, 4)
@@ -780,7 +807,16 @@ int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
 
 void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
 {
-    if (c_str == NULL || *c_str == '\0') return;
+    if (c_str == NULL) return;
+
+    if (*c_str == '\0') {
+        str_cat_c (str, ECMA_GRAY(75, "empty") "\n");
+        return;
+    }
+    if (*c_str == '\0') {
+        str_cat_c (str, ECMA_GRAY(75, "empty") "\n");
+        return;
+    }
 
     string_t result = {0};
     str_set_printf (&result, ESC_COLOR_BEGIN_STR(0, "%d") "%s" ESC_COLOR_END, esc_color, c_str);
@@ -796,7 +832,7 @@ void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_st
     str_replace (&result, "\n", str_data(&buff), NULL);
 
     if (c_str[strlen(c_str) - 1] != '\n') {
-        str_cat_c (&result,ECMA_GRAY(75, "∎") "\n");
+        str_cat_c (&result, ECMA_GRAY(75, "∎") "\n");
     }
 
     str_cat_indented_printf (str, curr_indent, "%s", str_data(&result));
@@ -935,6 +971,32 @@ bool char_in_str (char c, char *str)
     return false;
 }
 
+static inline
+void str_strip (string_t *str)
+{
+    if (str_len(str) > 0) {
+        char *start = str_data(str);
+        char *new_start = str_data(str);
+        size_t new_len = str_len(str);
+
+        while (is_space (new_start) || *(new_start) == '\n') {
+            new_start++;
+            new_len--;
+        }
+
+        if (new_len > 0) {
+            while (is_space (new_start + new_len - 1) || *(new_start + new_len - 1) == '\n') {
+                new_len--;
+            }
+        }
+
+        if (new_len > 0) {
+            memmove (start, new_start, new_len);
+        }
+        str_shrink (str, new_len);
+    }
+}
+
 ////////////////////
 // SHALLOW STRINGS
 //
@@ -954,7 +1016,7 @@ sstring_t sstr_set (char *s, uint32_t len)
 }
 
 static inline
-sstring_t sstr_trim (sstring_t str)
+sstring_t sstr_strip (sstring_t str)
 {
     if (str.len > 0) {
         while (is_space (str.s) || *(str.s) == '\n') {
