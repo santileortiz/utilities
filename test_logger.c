@@ -238,7 +238,15 @@ bool test_int (struct test_ctx_t *t, int result, int expected)
 void test_str_small (struct test_ctx_t *t, char *test_name, char *result, char *expected)
 {
     test_push (t, "%s (%s)", expected, test_name);
-    if (test_bool (t, strcmp(result,expected) != 0)) {
+    if (!test_bool (t, strcmp(result,expected) != 0)) {
+        test_error (t, "Failed string comparison got '%s', expected '%s'", result, expected);
+    }
+}
+
+// Default error message
+void test_str_e (struct test_ctx_t *t, char *result, char *expected)
+{
+    if (!test_str (t, result, expected)) {
         test_error (t, "Failed string comparison got '%s', expected '%s'", result, expected);
     }
 }
