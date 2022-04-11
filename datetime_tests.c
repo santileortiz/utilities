@@ -444,6 +444,18 @@ void datetime_tests (struct test_ctx_t *t)
         date_set (expected, 1900, -1, -1, -1, -1, -1, 0.0, true, 0, 0);
         date_read_test (t, "1900 ", expected);
 
+        // Missing offset
+        date_set (expected, 1900, 1, 1, 20, 30, -1, 0.0, false, 0, 0);
+        date_read_test_single (t, "1900-01-01 20:30", expected);
+        date_set (expected, 1900, 1, 1, 20, -1, -1, 0.0, false, 0, 0);
+        date_read_test_single (t, "1900-01-01 20", expected);
+        date_set (expected, 1900, 1, 1, -1, -1, -1, 0.0, false, 0, 0);
+        date_read_test_single (t, "1900-01-01", expected);
+        date_set (expected, 1900, 1, -1, -1, -1, -1, 0.0, false, 0, 0);
+        date_read_test_single (t, "1900-01", expected);
+        date_set (expected, 1900, -1, -1, -1, -1, -1, 0.0, false, 0, 0);
+        date_read_test_single (t, "1900", expected);
+
         // Invalid length for numeric elements
         invalid_date_read_test (t, "190-08-07 02:03:04.125Z");
         invalid_date_read_test (t, "19000-08-07 02:03:04.125Z");

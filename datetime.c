@@ -493,7 +493,7 @@ int date_cmp (struct date_t *d1, struct date_t *d2)
         }
     }
 
-    if (diff == 0 && d1->is_set_utc_offset)  {
+    if (diff == 0 && (d1->is_set_utc_offset || d2->is_set_utc_offset))  {
         if (d1->is_set_utc_offset == d2->is_set_utc_offset) {
             if (diff == 0) {
                 diff = d1->utc_offset_hour - d2->utc_offset_hour;
@@ -602,6 +602,7 @@ bool date_scanner_char (struct date_scanner_t *scnr, char c)
 }
 
 
+#define date_reset(d) date_set(d,0,-1,-1,-1,-1,-1,0.0,false,0,0)
 void date_set (struct date_t *d,
                int year, int month, int day,
                int hour, int minute, int second, double second_fraction,
