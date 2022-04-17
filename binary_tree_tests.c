@@ -9,11 +9,11 @@ BINARY_TREE_NEW(str_string, string_t, string_t, strcmp(str_data(&a),str_data(&b)
 
 void binary_tree_sample ()
 {
-    struct str_int_tree_t tree = {0};
+    struct str_int_t tree = {0};
 
-    str_int_tree_insert (&tree, "zeus", 20);
-    str_int_tree_insert (&tree, "ares", 3);
-    str_int_tree_insert (&tree, "juno", 99);
+    str_int_insert (&tree, "zeus", 20);
+    str_int_insert (&tree, "ares", 3);
+    str_int_insert (&tree, "juno", 99);
 
     // Node iteration
     printf ("Tree nodes:\n");
@@ -28,12 +28,12 @@ void binary_tree_sample ()
     // previously for the iteration and it's declared at local scope. This is an
     // limitation of the API. We could also wrap the BINARY_TREE_FOR() loop in a
     // local scope and use 'n'.
-    struct str_int_tree_node_t *node = NULL;
-    if (str_int_tree_lookup (&tree, "zeus", &node)) {
+    struct str_int_node_t *node = NULL;
+    if (str_int_lookup (&tree, "zeus", &node)) {
         printf ("Value of 'zeus': %d\n", node->value);
     }
 
-    str_int_tree_destroy (&tree);
+    str_int_destroy (&tree);
 }
 
 char **key_arrs[] = {
@@ -82,9 +82,9 @@ void binary_tree_tests (struct test_ctx_t *t)
         bool success = true;
         test_push (t, "Key arr %d", key_arr_idx);
 
-        struct str_int_tree_t tree = {0};
+        struct str_int_t tree = {0};
         for (int i=0; i<arr_len; i++) {
-            str_int_tree_insert (&tree, arr[i], i);
+            str_int_insert (&tree, arr[i], i);
         }
 
         // Test all keys are being iterated
@@ -111,7 +111,7 @@ void binary_tree_tests (struct test_ctx_t *t)
             // TODO: There is no get successor functionality right now.
             // Implement this so we don't need the auxiliary array.
             int n_idx = 0;
-            struct str_int_tree_node_t *nodes[arr_len];
+            struct str_int_node_t *nodes[arr_len];
             BINARY_TREE_FOR(str_int, &tree, n)
             {
                 nodes[n_idx] = n;
@@ -130,7 +130,7 @@ void binary_tree_tests (struct test_ctx_t *t)
             success = success && result;
         }
 
-        str_int_tree_destroy (&tree);
+        str_int_destroy (&tree);
 
         test_pop (t, success);
     }
