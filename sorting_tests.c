@@ -290,6 +290,11 @@ void sorting_tests (struct test_ctx_t *t)
         CRASH_TEST(success, t->error,
             struct sort_test_struct_t *empty_list = NULL;
             linked_list_sort (&empty_list, 0);
+            assert (empty_list == NULL);
+
+            // TODO: Fix this... right now it causes a crash
+            //linked_list_sort (&empty_list, -1);
+            //assert (empty_list == NULL);
 
             // Weird cases, ideally we shouldn't get these. Maybe assert on them?
             // currently we interpret all of these as empty lists.
