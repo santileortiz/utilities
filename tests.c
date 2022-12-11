@@ -4,7 +4,6 @@
 
 #define TEST_NO_SUBPROCESS
 
-#define _GNU_SOURCE
 #include <stdio.h>
 #include "common.h"
 #include "test_logger.c"
