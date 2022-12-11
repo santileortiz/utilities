@@ -237,9 +237,14 @@ bool test_int (struct test_ctx_t *t, int result, int expected)
 // For the case where it makes sense to use the expected string as start of the test name.
 void test_str_small (struct test_ctx_t *t, char *test_name, char *result, char *expected)
 {
-    test_push (t, "%s (%s)", expected, test_name);
-    if (!test_bool (t, strcmp(result,expected) != 0)) {
-        test_error (t, "Failed string comparison got '%s', expected '%s'", result, expected);
+    if (test_name == NULL) {
+        test_push (t, "%s", expected);
+    } else {
+        test_push (t, "%s (%s)", expected, test_name);
+    }
+
+    if (!test_bool (t, strcmp(result,expected) == 0)) {
+        test_error (t, "Failed string comparison:\n got: '%s'\n exp: '%s'", result, expected);
     }
 }
 

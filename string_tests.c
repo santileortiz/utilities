@@ -119,6 +119,7 @@ void string_tests (struct test_ctx_t *t)
             str_strip (&str);
             test_str (t, str_data(&str), "something");
 
+            str_free(&str);
             test_pop_parent (t);
         }
     }
