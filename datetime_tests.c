@@ -187,23 +187,23 @@ void date_write_rfc3339_test (struct test_ctx_t *t, struct date_t *date, char *e
     date->utc_offset_minute = 0;
     str_put_c (&test_date, base_end, "Z");
     date_write_rfc3339 (date, buff);
-    string_test (t, "UTC offset", buff, str_data(&test_date));
+    test_str (t, "UTC offset", buff, str_data(&test_date));
 
     date->utc_offset_hour = 6;
     date->utc_offset_minute = 30;
     str_put_c (&test_date, base_end, "+06:30");
     date_write_rfc3339 (date, buff);
-    string_test (t, "Positive UTC offset", buff, str_data(&test_date));
+    test_str (t, "Positive UTC offset", buff, str_data(&test_date));
 
     date->utc_offset_hour = -6;
     str_put_c (&test_date, base_end, "-06:30");
     date_write_rfc3339 (date, buff);
-    string_test (t, "Negative UTC offset", buff, str_data(&test_date));
+    test_str (t, "Negative UTC offset", buff, str_data(&test_date));
 
     date->is_set_utc_offset = false;
     str_put_c (&test_date, base_end, "-00:00");
     date_write_rfc3339 (date, buff);
-    string_test (t, "Unknown UTC offset", buff, str_data(&test_date));
+    test_str (t, "Unknown UTC offset", buff, str_data(&test_date));
 
     str_free (&test_date);
     test_pop_parent (t);
@@ -224,7 +224,7 @@ void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_
     date->utc_offset_minute = 30;
     str_put_c (&test_date, base_end, "");
     date_write (date, precision, true, true, true, false, buff);
-    string_test (t, "Force no UTC offset", buff, str_data(&test_date));
+    test_str (t, "Force no UTC offset", buff, str_data(&test_date));
 
     if (precision < D_HOUR) {
         str_cat_c (&test_date, "T");
@@ -236,26 +236,26 @@ void date_write_test (struct test_ctx_t *t, struct date_t *date, enum reference_
     date->utc_offset_minute = 0;
     str_put_c (&test_date, base_end, "Z");
     date_write (date, precision, false, true, true, false, buff);
-    string_test (t, "UTC offset", buff, str_data(&test_date));
+    test_str (t, "UTC offset", buff, str_data(&test_date));
 
     date->utc_offset_hour = 6;
     date->utc_offset_minute = 30;
     str_put_c (&test_date, base_end, "+06:30");
     date_write (date, precision, false, true, true, false, buff);
-    string_test (t, "Positive UTC offset", buff, str_data(&test_date));
+    test_str (t, "Positive UTC offset", buff, str_data(&test_date));
 
     date->utc_offset_hour = -6;
     str_put_c (&test_date, base_end, "-06:30");
     date_write (date, precision, false, true, true, false, buff);
-    string_test (t, "Negative UTC offset", buff, str_data(&test_date));
+    test_str (t, "Negative UTC offset", buff, str_data(&test_date));
 
     date->is_set_utc_offset = false;
     str_put_c (&test_date, base_end, "-00:00");
     date_write (date, precision, false, true, true, false, buff);
-    string_test (t, "Unknown UTC offset", buff, str_data(&test_date));
+    test_str (t, "Unknown UTC offset", buff, str_data(&test_date));
 
     if (precision != D_SECOND || date->second_fraction > 0) {
-        int_test (t, "Maximum length", strlen(buff) + 1, date_max_len[precision]);
+        test_int (t, "Maximum length", strlen(buff) + 1, date_max_len[precision]);
     }
 
     str_free (&test_date);
@@ -697,23 +697,23 @@ void datetime_tests (struct test_ctx_t *t)
 
         date_set (date, 1900, 8, 7, 2, 3, -1, -1, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
-        string_test (t, "Minute Precision", buff, "1900-8-7T2:3-06:30");
+        test_str (t, "Minute Precision", buff, "1900-8-7T2:3-06:30");
 
         date_set (date, 1900, 8, 7, 2, -1, -1, -1, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
-        string_test (t, "Hour Precision", buff, "1900-8-7T2-06:30");
+        test_str (t, "Hour Precision", buff, "1900-8-7T2-06:30");
 
         date_set (date, 1900, 8, 7, -1, -1, -1, -1, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
-        string_test (t, "Day Precision", buff, "1900-8-7T-06:30");
+        test_str (t, "Day Precision", buff, "1900-8-7T-06:30");
 
         date_set (date, 1900, 8, -1, -1, -1, -1, -1, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
-        string_test (t, "Month Precision", buff, "1900-8T-06:30");
+        test_str (t, "Month Precision", buff, "1900-8T-06:30");
 
         date_set (date, 1900, -1, -1, -1, -1, -1, -1, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
-        string_test (t, "Year Precision", buff, "1900T-06:30");
+        test_str (t, "Year Precision", buff, "1900T-06:30");
 
         test_pop_parent (t);
     }

@@ -68,29 +68,25 @@ void string_tests (struct test_ctx_t *t)
         {
             char str[] = "  Hey there    ";
             cstr_rstrip (str);
-            test_push (t, "normal usage");
-            test_str (t, str, "  Hey there");
+            test_str (t, "normal usage", str, "  Hey there");
         }
 
         {
             char str[] = "    ";
             cstr_rstrip (str);
-            test_push (t, "all spaces");
-            test_str (t, str, "");
+            test_str (t, "all spaces", str, "");
         }
 
         {
             char str[] = "";
             cstr_rstrip (str);
-            test_push (t, "empty string");
-            test_str (t, str, "");
+            test_str (t, "empty string", str, "");
         }
 
         {
             char str[] = "something";
             cstr_rstrip (str);
-            test_push (t, "no spaces");
-            test_str (t, str, "something");
+            test_str (t, "no spaces", str, "something");
         }
         test_pop_parent (t);
 
@@ -101,27 +97,87 @@ void string_tests (struct test_ctx_t *t)
 
             str_set(&str, "  Hey there    ");
             str_strip (&str);
-            test_push (t, "normal usage");
-            test_str_e (t, str_data(&str), "Hey there");
+            test_str (t, "normal usage", str_data(&str), "Hey there");
 
             str_set(&str, "    ");
-            test_push (t, "all spaces");
             str_strip (&str);
-            test_str (t, str_data(&str), "");
+            test_str (t, "all spaces", str_data(&str), "");
 
             str_set(&str, "");
-            test_push (t, "empty string");
             str_strip (&str);
-            test_str (t, str_data(&str), "");
+            test_str (t, "empty string", str_data(&str), "");
 
             str_set(&str, "something");
-            test_push (t, "no spaces");
             str_strip (&str);
-            test_str (t, str_data(&str), "something");
+            test_str (t, "no spaces", str_data(&str), "something");
 
             str_free(&str);
             test_pop_parent (t);
         }
+    }
+
+    {
+        test_push (t, "cstr_find_open_parenthesis");
+
+        size_t pos;
+        int count;
+
+        test_push (t, "Common Case");
+        char *str1 = "Some text Start a ((((()))())()) contained (paren) thesis (() and split close) more text (A (and parenthesis) within((((()))())())x () blah";
+        bool ret = cstr_find_open_parenthesis (str1, &pos, &count);
+        test_int (t, "ret", ret, true);
+        test_int (t, "pos", pos, 89);
+        test_int (t, "count", count, 1);
+        test_pop_parent (t);
+
+
+        test_push (t, "count==2");
+        char *str2 = "Some text Start a ((((()))())()) contained (paren) thesis ((() and split close) more text (A (and parenthesis) within((((()))())())x () blah";
+        ret = cstr_find_open_parenthesis (str2, &pos, &count);
+        test_int (t, "ret", ret, true);
+        test_int (t, "pos", pos, 58);
+        test_int (t, "count", count, 2);
+        test_pop_parent (t);
+
+        test_push (t, "No open parenthesis");
+        char *str3 = "Some text Start a ((((()))())()) contained (paren) thesis ((() and split close) more text (A (and parenthesis) within((((()))())())x () blah))";
+        ret = cstr_find_open_parenthesis (str3, &pos, &count);
+        test_int (t, "ret", ret, false);
+        test_int (t, "pos", pos, 0);
+        test_int (t, "count", count, 0);
+        test_pop_parent (t);
+
+        test_pop_parent (t);
+
+        test_push (t, "cstr_find_close_parenthesis");
+
+        test_push (t, "Common Case");
+        ret = cstr_find_close_parenthesis("some text ()) (bla) lorem", 1, &pos);
+        test_int (t, "ret", ret, true);
+        test_int (t, "pos", pos, 12);
+        test_pop_parent (t);
+
+        test_push (t, "Common Case");
+        char *str4 = "some ((d((d(d))s)(a))(d))text ()) ((d((d(d))s)(a))(d))) ()(()(()((())))) lorem";
+        ret = cstr_find_close_parenthesis(str4, 2, &pos);
+        test_int (t, "ret", ret, true);
+        test_int (t, "pos", pos, 54);
+        test_pop_parent (t);
+
+        test_push (t, "No close parenthesis");
+        char *str5 = "some text () (bla) lorem";
+        ret = cstr_find_close_parenthesis(str5, 1, &pos);
+        test_int (t, "ret", ret, false);
+        test_int (t, "pos", pos, strlen(str5));
+        test_pop_parent (t);
+
+        test_push (t, "Zero count");
+        ret = cstr_find_close_parenthesis("some ((d((d(d))s)(a))(d))text ()) ((d((d(d))s)(a))(d))) ()(()(()((())))) lorem", 0, &pos);
+        test_int (t, "ret", ret, false);
+        test_int (t, "pos", pos, 0);
+        test_pop_parent (t);
+
+        test_pop_parent (t);
     }
 
     test_pop_parent (t);

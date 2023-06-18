@@ -213,25 +213,22 @@ void test_error (struct test_ctx_t *t, char *fmt, ...)
     }
 }
 
-void test_error_c (struct test_ctx_t *t, char *error_msg)
-{
-    test_error (t, "%s", error_msg);
-}
 
-bool test_bool (struct test_ctx_t *t, bool result)
+// Common test conditions
+bool test_bool_c (struct test_ctx_t *t, bool result)
 {
     _test_pop (t, result);
     return result;
 }
 
-bool test_str (struct test_ctx_t *t, char *result, char *expected)
+bool test_str_c (struct test_ctx_t *t, char *result, char *expected)
 {
-    return test_bool(t, strcmp(result, expected) == 0);
+    return test_bool_c(t, strcmp(result, expected) == 0);
 }
 
-bool test_int (struct test_ctx_t *t, int result, int expected)
+bool test_int_c (struct test_ctx_t *t, int result, int expected)
 {
-    return test_bool(t, result == expected);
+    return test_bool_c(t, result == expected);
 }
 
 // For the case where it makes sense to use the expected string as start of the test name.
@@ -243,42 +240,45 @@ void test_str_small (struct test_ctx_t *t, char *test_name, char *result, char *
         test_push (t, "%s (%s)", expected, test_name);
     }
 
-    if (!test_bool (t, strcmp(result,expected) == 0)) {
+    if (!test_bool_c (t, strcmp(result,expected) == 0)) {
         test_error (t, "Failed string comparison:\n got: '%s'\n exp: '%s'", result, expected);
     }
 }
 
+
 // Default error message
-void test_str_e (struct test_ctx_t *t, char *result, char *expected)
+bool test_str_e (struct test_ctx_t *t, char *result, char *expected)
 {
-    if (!test_str (t, result, expected)) {
+    if (!test_str_c (t, result, expected)) {
         test_error (t, "Failed string comparison got '%s', expected '%s'", result, expected);
+        return false;
     }
+    return true;
 }
 
-// TODO: Remove...
-void string_test (struct test_ctx_t *t, char *test_name, char *result, char *expected)
+bool test_int_e (struct test_ctx_t *t, int result, int expected)
 {
-    bool success = true;
-    test_push (t, "%s (%s)", expected, test_name);
-    if (strcmp (result, expected) != 0) {
-        str_cat_printf (t->error, "Failed string comparison got '%s', expected '%s'\n", result, expected);
-        success = false;
+    if (!test_int_c (t, result, expected)) {
+        test_error (t, "Failed int comparison got %d, expected %d\n", result, expected);
+        return false;
     }
-    _test_pop (t, success);
+    return true;
 }
 
-// TODO: Remove...
-void int_test (struct test_ctx_t *t, char *test_name, int result, int expected)
+
+// Shorthand common cases
+bool test_str (struct test_ctx_t *t, char *test_name, char *result, char *expected)
 {
-    bool success = true;
     test_push (t, "%s", test_name);
-    if (result != expected) {
-        str_cat_printf (t->error, "Failed int comparison got %d, expected %d\n", result, expected);
-        success = false;
-    }
-    _test_pop (t, success);
+    return test_str_e (t, result, expected);
 }
+
+bool test_int (struct test_ctx_t *t, char *test_name, int result, int expected)
+{
+    test_push (t, "%s", test_name);
+    return test_int_e (t, result, expected);
+}
+
 
 // Frontend of _test_pop(). Pops a test but fails if any child test also failed
 // if there were no children or all child tests passed then the fail/sucess of

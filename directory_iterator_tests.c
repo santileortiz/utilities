@@ -71,7 +71,7 @@ void directory_iterator_tests (struct test_ctx_t *t)
         }
 
         test_push (t, "equal size");
-        test_bool (t, !size_error);
+        test_bool_c (t, !size_error);
 
         str_free (&path);
         str_free (&expected);
@@ -113,8 +113,7 @@ void directory_iterator_tests (struct test_ctx_t *t)
             str_free (&expected_str);
         }
 
-        test_push (t, "equal size");
-        bool success = test_int (t, result_len, ARRAY_SIZE(expected_dir));
+        bool success = test_int (t, "equal size", result_len, ARRAY_SIZE(expected_dir));
 
         if (success) {
             test_push (t, "equal content");

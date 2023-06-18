@@ -870,6 +870,11 @@ char* cstr_to_lower (char *str)
     return lower_str;
 }
 
+bool cstr_starts_with(char *str, char *prefix)
+{
+    return strncmp(str, prefix, strlen(prefix)) == 0;
+}
+
 void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
 {
     if (c_str == NULL) return;
@@ -1066,6 +1071,24 @@ void str_strip (string_t *str)
         if (new_len > 0) {
             memmove (start, new_start, new_len);
         }
+        str_shrink (str, new_len);
+    }
+}
+
+static inline
+void str_rstrip (string_t *str)
+{
+    char *s = str_data(str);
+    size_t len = str_len(str);
+    size_t new_len = len;
+
+    if (len > 0) {
+        char *end = s + len - 1;
+        while (end >= s && *end != '\0' && *end == ' ') {
+            new_len--;
+            end--;
+        }
+
         str_shrink (str, new_len);
     }
 }
@@ -3066,6 +3089,71 @@ void cstr_split (mem_pool_t *pool, char *str, char *sep, char ***arr_out, int *a
     *arr_len_out = arr_len;
 }
 
+bool cstr_find_open_parenthesis(char* str, size_t *pos, int *count)
+{
+    int count_l = 0;
+    bool found = false;
+    size_t open_position = 0;
+
+    for (int i=0; i<strlen(str); i++) {
+        if (str[i] == '(') {
+            if (count_l == 0) {
+                found = true;
+                open_position = i;
+            }
+
+            count_l++;
+
+        } else if (str[i] == ')') {
+            count_l--;
+
+            if (count_l == 0) {
+                open_position = 0;
+                found = false;
+            }
+        }
+    }
+
+    if (pos != NULL) *pos = open_position;
+    if (count != NULL) *count = count_l;
+
+    return found;
+}
+
+bool cstr_find_close_parenthesis(char* str, int count, size_t* pos) {
+    bool found = false;
+    size_t close_position = 0;
+
+    if (count > 0) {
+        for (size_t i = 0; i < strlen(str); i++) {
+            if (str[i] == '(') {
+                count++;
+
+            } else if (str[i] == ')') {
+                count--;
+
+                if (count == 0) {
+                    close_position = i;
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found) {
+            // If we don't find a closing parenthesis we default to returning the
+            // length of the input as pos. This distinguishes the case of "we
+            // expected a closing parenthesis and didn't find one", from "there was
+            // nothing to do".
+            close_position = strlen(str);
+        }
+    }
+
+    if (pos != NULL) *pos = close_position;
+
+    return found;
+}
+
 // Flatten an array of null terminated strings into a single string allocated
 // into _pool_ or heap.
 char* collapse_str_arr (char **arr, int n, mem_pool_t *pool)
@@ -4331,7 +4419,7 @@ for (; varname != NULL; varname = varname->next)
 #define _linked_list_sort_implementation(FUNCNAME,TYPE,NEXT_FIELD)  \
 TYPE* FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)  \
 {                                                                   \
-    if (head == NULL || n == 0) {                                   \
+    if (head == NULL) {                                             \
         return NULL;                                                \
     }                                                               \
                                                                     \
@@ -4342,6 +4430,10 @@ TYPE* FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)  \
             n++;                                                    \
             node = node->NEXT_FIELD;                                \
         }                                                           \
+    }                                                               \
+                                                                    \
+    if (n == 0) {                                                   \
+        return NULL;                                                \
     }                                                               \
                                                                     \
     TYPE *node = *head;                                             \
@@ -4436,6 +4528,9 @@ ON_DESTROY_CALLBACK (pooled_free_call)
 
 #define DYNAMIC_ARRAY_POP_LAST(head_name) \
 head_name[--(head_name ## _len)]
+
+#define DYNAMIC_ARRAY_REMOVE_LAST(head_name) \
+--(head_name ## _len)
 
 #define DYNAMIC_ARRAY_GET_LAST(head_name) \
 head_name[head_name ## _len - 1]
