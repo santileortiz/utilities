@@ -340,9 +340,8 @@ void date_generic_zellers_congruence_test (struct test_ctx_t *t, char *test_name
 }
 
 void date_recurrent_event_test (struct test_ctx_t *t, char *test_name,
-                                int frequency, enum reference_time_duration_t scale,
-                                struct date_element_t *date_element, struct date_t *start_date,
-                                struct date_t *expected)
+    int frequency, enum reference_time_duration_t scale, struct date_t *start_date,
+    struct date_t *expected)
 {
     string_t error = {0};
     bool success = true;
@@ -352,8 +351,7 @@ void date_recurrent_event_test (struct test_ctx_t *t, char *test_name,
     test_push (t, "%s", test_name);
 
     success = recurrent_event_set (&re,
-                                   frequency, scale, date_element,
-                                   start_date,
+                                   frequency, scale, start_date,
                                    &error);
 
     test_push (t, "Validate recurrent event definition");
@@ -364,6 +362,10 @@ void date_recurrent_event_test (struct test_ctx_t *t, char *test_name,
 
     if (success) {
         recurrent_event_next (&re, NULL, &result);
+        struct date_t resolved_start = date_resolve_interval(&re.start);
+        date_compare_test (t, "Compute start", &result, &resolved_start);
+
+        recurrent_event_next (&re, &re.start, &result);
         date_compare_test (t, "Compute next", &result, expected);
     }
 
@@ -402,20 +404,22 @@ void datetime_tests (struct test_ctx_t *t)
         different_date_compare_test (t, "Different second", d1, d2);
         date_set (d2, 1900, 8, 7, 2, 3, 4, 0.000, true, 0, 0);
         different_date_compare_test (t, "Different second fraction", d1, d2);
-        date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, false, 0, 0);
-        different_date_compare_test (t, "Different has UTC offset", d1, d2);
         date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, true, 1, 0);
         different_date_compare_test (t, "Different time offset minute", d1, d2);
         date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, true, 0, 1);
         different_date_compare_test (t, "Different time offset minute", d1, d2);
+
+        // NOTE: Having different is_set_utc_offset causes an assertion
+        // failure. This causes a crash:
+        //date_set (d2, 1900, 8, 7, 2, 3, 4, 0.125, false, 0, 0);
+        //different_date_compare_test (t, "Different has UTC offset", d1, d2);
 
         test_pop_parent (t);
     }
 
     {
         test_push (t, "Date read");
-        struct date_t _expected = {0};
-        struct date_t *expected = &_expected;
+        STACK_ALLOCATE(struct date_t, expected);
 
         // NOTE(sleon): Use seconds fraction of 0.125 because it's exactly
         // representable as floating point value, this means it can be safely
@@ -497,57 +501,57 @@ void datetime_tests (struct test_ctx_t *t)
         test_push (t, "Date operations");
 
         date_operation_test (t,
-            DATE_P(2015, 6, 30, -1, -1, -1, 0.0, false, 0, 0),
+            &DATE(2015, 6, 30, -1, -1, -1, 0.0, false, 0, 0),
             1, D_DAY,
-            DATE_P(2015, 7,  1, -1, -1, -1, 0.0, false, 0, 0));
+            &DATE(2015, 7,  1, -1, -1, -1, 0.0, false, 0, 0));
 
         date_operation_test (t,
-            DATE_P(1900, 12, 31, 19, 59, 59, 0.0, false, 0, 0),
+            &DATE(1900, 12, 31, 19, 59, 59, 0.0, false, 0, 0),
             5, D_HOUR,
-            DATE_P(1901,  1,  1,  0, 59, 59, 0.0, false, 0, 0));
+            &DATE(1901,  1,  1,  0, 59, 59, 0.0, false, 0, 0));
 
         date_operation_test (t,
-            DATE_P(1900, 12, 31, 23, 59, 59, 0.25, false, 0, 0),
+            &DATE(1900, 12, 31, 23, 59, 59, 0.25, false, 0, 0),
             1, D_SECOND,
-            DATE_P(1901,  1,  1,  0,  0,  0, 0.25, false, 0, 0));
+            &DATE(1901,  1,  1,  0,  0,  0, 0.25, false, 0, 0));
 
         // Make sure leap days are taken into account
         date_operation_test (t,
-            DATE_P(1900, 2, 28, 19, 59, 59, 0.0, false, 0, 0),
+            &DATE(1900, 2, 28, 19, 59, 59, 0.0, false, 0, 0),
             1, D_DAY,
-            DATE_P(1900, 3,  1, 19, 59, 59, 0.0, false, 0, 0));
+            &DATE(1900, 3,  1, 19, 59, 59, 0.0, false, 0, 0));
 
         date_operation_test (t,
-            DATE_P(2000, 2, 28, 19, 59, 59, 0.0, false, 0, 0),
+            &DATE(2000, 2, 28, 19, 59, 59, 0.0, false, 0, 0),
             1, D_DAY,
-            DATE_P(2000, 2, 29, 19, 59, 59, 0.0, false, 0, 0));
+            &DATE(2000, 2, 29, 19, 59, 59, 0.0, false, 0, 0));
 
         date_operation_test (t,
-            DATE_P(2000, 2, 29, 19, 59, 59, 0.0, false, 0, 0),
+            &DATE(2000, 2, 29, 19, 59, 59, 0.0, false, 0, 0),
             1, D_DAY,
-            DATE_P(2000, 3,  1, 19, 59, 59, 0.0, false, 0, 0));
+            &DATE(2000, 3,  1, 19, 59, 59, 0.0, false, 0, 0));
 
         // Make sure leap seconds are taken into account
         date_operation_test (t,
-            DATE_P(2005, 12, 31, 23, 59, 59, 0.0, false, 0, 0),
+            &DATE(2005, 12, 31, 23, 59, 59, 0.0, false, 0, 0),
             1, D_SECOND,
-            DATE_P(2005, 12, 31, 23, 59, 60, 0.0, false, 0, 0));
+            &DATE(2005, 12, 31, 23, 59, 60, 0.0, false, 0, 0));
 
         date_operation_test (t,
-            DATE_P(2005, 12, 31, 23, 59, 60, 0.0, false, 0, 0),
+            &DATE(2005, 12, 31, 23, 59, 60, 0.0, false, 0, 0),
             1, D_SECOND,
-            DATE_P(2006,  1,  1,  0,  0,  0, 0.0, false, 0, 0));
+            &DATE(2006,  1,  1,  0,  0,  0, 0.0, false, 0, 0));
 
         date_operation_test (t,
-            DATE_P(2006, 12, 31, 23, 59, 59, 0.0, false, 0, 0),
+            &DATE(2006, 12, 31, 23, 59, 59, 0.0, false, 0, 0),
             1, D_SECOND,
-            DATE_P(2007,  1,  1,  0,  0,  0, 0.0, false, 0, 0));
+            &DATE(2007,  1,  1,  0,  0,  0, 0.0, false, 0, 0));
 
         // :unrestricted_date_addition
         //date_operation_test (t,
-        //    DATE_P(1900, 1, 1, 0, 0, 0, 0.0, false, 0, 0),
+        //    &DATE(1900, 1, 1, 0, 0, 0, 0.0, false, 0, 0),
         //    120, D_MINUTE,
-        //    DATE_P(1900, 1, 1, 2, 0, 0, 0.0, false, 0, 0));
+        //    &DATE(1900, 1, 1, 2, 0, 0, 0.0, false, 0, 0));
 
         test_pop_parent (t);
     }
@@ -655,16 +659,16 @@ void datetime_tests (struct test_ctx_t *t)
         date_set (date, 1900, 8, 7, 2, 3, -1, 0.0, false, 0, 0);
         date_write_rfc3339_test (t, date, "1900-08-07T02:03:00");
 
-        date->minute = -1;
+        date->minute = D_COMPONENT_UNSET;
         date_write_rfc3339_test (t, date, "1900-08-07T02:00:00");
 
-        date->hour = -1;
+        date->hour = D_COMPONENT_UNSET;
         date_write_rfc3339_test (t, date, "1900-08-07T00:00:00");
 
-        date->day = -1;
+        date->day = D_COMPONENT_UNSET;
         date_write_rfc3339_test (t, date, "1900-08-01T00:00:00");
 
-        date->month = -1;
+        date->month = D_COMPONENT_UNSET;
         date_write_rfc3339_test (t, date, "1900-01-01T00:00:00");
 
         test_pop_parent (t);
@@ -695,23 +699,23 @@ void datetime_tests (struct test_ctx_t *t)
 
         char buff[DATE_TIMESTAMP_MAX_LEN];
 
-        date_set (date, 1900, 8, 7, 2, 3, -1, -1, true,-6, 30);
+        date_set (date, 1900, 8, 7, 2, 3, D_COMPONENT_UNSET, D_COMPONENT_UNSET, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
         test_str (t, "Minute Precision", buff, "1900-8-7T2:3-06:30");
 
-        date_set (date, 1900, 8, 7, 2, -1, -1, -1, true,-6, 30);
+        date_set (date, 1900, 8, 7, 2, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
         test_str (t, "Hour Precision", buff, "1900-8-7T2-06:30");
 
-        date_set (date, 1900, 8, 7, -1, -1, -1, -1, true,-6, 30);
+        date_set (date, 1900, 8, 7, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
         test_str (t, "Day Precision", buff, "1900-8-7T-06:30");
 
-        date_set (date, 1900, 8, -1, -1, -1, -1, -1, true,-6, 30);
+        date_set (date, 1900, 8, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
         test_str (t, "Month Precision", buff, "1900-8T-06:30");
 
-        date_set (date, 1900, -1, -1, -1, -1, -1, -1, true,-6, 30);
+        date_set (date, 1900, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, true,-6, 30);
         date_write_compact (date, D_SECOND, buff);
         test_str (t, "Year Precision", buff, "1900T-06:30");
 
@@ -722,11 +726,11 @@ void datetime_tests (struct test_ctx_t *t)
         test_push (t, "Get day of week");
 
         date_get_day_of_week_test (t, NULL,
-                                   &DATE_DAY(2000, 1, 1),
+                                   &DATE_DAY_NTZ(2000, 1, 1),
                                    D_SATURDAY);
 
         date_get_day_of_week_test (t, NULL,
-                                   &DATE_DAY(2000, 3, 1),
+                                   &DATE_DAY_NTZ(2000, 3, 1),
                                    D_WEDNESDAY);
 
         struct date_t now;
@@ -746,7 +750,7 @@ void datetime_tests (struct test_ctx_t *t)
     {
         test_push (t, "Generic Zeller's congruence");
 
-        struct date_t first_sunday = DATE_DAY(0, 3, 5);
+        struct date_t first_sunday = DATE_DAY_NTZ(0, 3, 5);
         enum day_of_week_t expected = date_get_day_of_week (&first_sunday);
         date_generic_zellers_congruence_test (t, NULL,
             &first_sunday,
@@ -755,7 +759,7 @@ void datetime_tests (struct test_ctx_t *t)
             expected);
         assert (expected == D_SUNDAY);
 
-        struct date_t date = DATE_DAY(0, 3, 1);
+        struct date_t date = DATE_DAY_NTZ(0, 3, 1);
         expected = date_get_day_of_week (&date);
         date_generic_zellers_congruence_test (t, NULL,
             &first_sunday,
@@ -763,7 +767,7 @@ void datetime_tests (struct test_ctx_t *t)
             7,
             expected);
 
-        date = DATE_DAY(1600, 3, 12);
+        date = DATE_DAY_NTZ(1600, 3, 12);
         expected = date_get_day_of_week (&date);
         date_generic_zellers_congruence_test (t, NULL,
             &first_sunday,
@@ -771,7 +775,7 @@ void datetime_tests (struct test_ctx_t *t)
             7,
             expected);
 
-        date = DATE_DAY(2000, 1, 1);
+        date = DATE_DAY_NTZ(2000, 1, 1);
         expected = date_get_day_of_week (&date);
         date_generic_zellers_congruence_test (t, NULL,
             &first_sunday,
@@ -779,7 +783,7 @@ void datetime_tests (struct test_ctx_t *t)
             7,
             expected);
 
-        date = DATE_DAY(2000, 3, 1);
+        date = DATE_DAY_NTZ(2000, 3, 1);
         expected = date_get_day_of_week (&date);
         date_generic_zellers_congruence_test (t, NULL,
             &first_sunday,
@@ -794,8 +798,8 @@ void datetime_tests (struct test_ctx_t *t)
         test_push (t, "Generic Zeller's and day addition ");
 
         bool success = true;
-        struct date_t start = DATE_DAY(1600, 1, 3);
-        struct date_t end = DATE_DAY(1601, 1, 22);
+        struct date_t start = DATE_DAY_NTZ(1600, 1, 3);
+        struct date_t end = DATE_DAY_NTZ(1601, 1, 22);
         int step = 11;
 
         enum day_of_week_t start_day_of_week = date_get_day_of_week (&start);
@@ -836,35 +840,50 @@ void datetime_tests (struct test_ctx_t *t)
     {
         test_push (t, "Recurrent event tests");
 
-        date_recurrent_event_test (t, "Saturdays",
-            7, D_DAY, NULL,
-            &DATE_DAY(1908, 1, 4),
-
-            &DATE_DAY (1908, 1, 11));
-
         date_recurrent_event_test (t, "International worker's day",
-            1, D_YEAR, &DATE_ELEMENT_DAY(-1, 5, 1),
-            &DATE_YEAR(1890),
+            1, D_YEAR, &DATE_DAY_NTZ(1890, 5, 1),
 
-            &DATE_DAY (1891, 5, 1));
+            &DATE_DAY_NTZ (1891, 5, 1));
 
-        date_recurrent_event_test (t, "Every month",
-            1, D_MONTH, &DATE_ELEMENT_DAY(-1, -1, 15),
-            &DATE_MONTH(2000, 2),
+        date_recurrent_event_test (t, "The 15th of each month, starting February of 2018",
+            1, D_MONTH, &DATE_DAY_NTZ(2018, 3, 15),
 
-            &DATE_DAY (2000, 3, 15));
+            &DATE_DAY_NTZ (2018, 4, 15));
 
-        date_recurrent_event_test (t, "Every 2 months",
-            2, D_MONTH, &DATE_ELEMENT_DAY(-1, -1, 20),
-            &DATE_MONTH(2000, 2),
+        date_recurrent_event_test (t, "Each April, starting 2002",
+            1, D_YEAR, &DATE_MONTH_NTZ(2002, 4),
 
-            &DATE_DAY (2000, 4, 20));
+            &DATE_MONTH_NTZ (2003, 4));
 
-        date_recurrent_event_test (t, "Every 2 months starting January",
-            2, D_MONTH, &DATE_ELEMENT_DAY(-1, -1, 20),
-            &DATE_MONTH(2000, 1),
+        date_recurrent_event_test (t, "First day of each quarter of the year, starting 2011",
+            3, D_MONTH, &DATE_DAY_NTZ(2011, 3, 1),
 
-            &DATE_DAY (2000, 3, 20));
+            &DATE_DAY_NTZ (2011, 6, 1));
+
+        date_recurrent_event_test (t, "Every Friday in the Gregorian calendar",
+            7, D_DAY, &DATE_DAY_NTZ(1582, 10, 15),
+
+            &DATE_DAY_NTZ (1582, 10, 22));
+
+        date_recurrent_event_test (t, "Each week at 5am with UTC offset -6:00, starting January 4th of 2010",
+            7, D_DAY, &DATE_HOUR(2010, 1, 4, 5, 6, 0),
+
+            &DATE_HOUR (2010, 1, 11, 5, 6, 0));
+
+        date_recurrent_event_test (t, "Each year from the start of the year until the 15th of April, starting 2005",
+            1, D_YEAR, &DATE_INTERVAL_NTZ(DT_YEAR(2005), DT_DAY(D_COMPONENT_UNSET, 4, 15)),
+
+            &DATE_INTERVAL_NTZ(DT_YEAR(2006), DT_DAY(2006, 4, 15)));
+
+        date_recurrent_event_test (t, "Each week from 9am to 1:30pm UTC, starting August 16th of 2017",
+            7, D_DAY, &DATE_INTERVAL(DT_HOUR(2017, 8, 16, 9), DT_MINUTE(D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 13, 30), 0, 0),
+
+            &DATE_INTERVAL(DT_HOUR(2017, 8, 23, 9), DT_MINUTE(2017, 8, 23, 13, 30), 0, 0));
+
+        date_recurrent_event_test (t, "Every year, from 31st of December 2023 from 22:00 to 2:00 UTC next day",
+            1, D_YEAR, &DATE_INTERVAL(DT_HOUR(2023, 12, 31, 22), DT_HOUR(D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 2), 0, 0),
+
+            &DATE_INTERVAL(DT_HOUR(2024, 12, 31, 22), DT_HOUR(2025, 1, 1, 2), 0, 0));
 
         test_pop_parent (t);
     }

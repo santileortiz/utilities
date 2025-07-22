@@ -88,33 +88,44 @@ char *month_names[] = {
     "December"
 };
 
-struct date_element_t {
+// Is endianess going to affect the order of these? They need to match so that
+// date->year == date->v[D_YEAR]
+#define DATE_TUPLE \
+    struct {             \
+        int32_t year;    \
+        int32_t month;   \
+        int32_t day;     \
+        int32_t hour;    \
+        int32_t minute;  \
+        int32_t second;  \
+    };                   \
+    int32_t v[6]
+
+// Special values for date tuple values
+
+// Used when a date doesn't have full precision, or for values at the start of
+// a relative tuple. We don't use 0 because this is a valid value for time
+// components.
+#define D_COMPONENT_UNSET -1
+
+// Evaluates to the last valid value on a relative date. Not valid on the year
+// position (first element of the date tuple).
+#define D_COMPONENT_LAST  -2
+
+
+struct date_tuple_t{
     union {
-        struct {
-            int32_t year;
-            int32_t month;
-            int32_t day;
-            int32_t hour;
-            int32_t minute;
-            int32_t second;
-        };
-        int32_t v[6];
+        DATE_TUPLE;
     };
 };
 
-// Is endianess going to affect the order of these? They need to match so that
-// date->year == date->v[D_YEAR]
 struct date_t {
     union {
+        DATE_TUPLE;
         struct {
-            int32_t year;
-            int32_t month;
-            int32_t day;
-            int32_t hour;
-            int32_t minute;
-            int32_t second;
+            struct date_tuple_t start;
+            struct date_tuple_t end;
         };
-        int32_t v[6];
     };
 
     double second_fraction;
@@ -123,6 +134,14 @@ struct date_t {
     int32_t utc_offset_hour;
     int32_t utc_offset_minute;
 };
+
+// By default fields of .end are left zeroed out, only if the date is an
+// interval they may be set to something else.
+static inline
+bool date_is_interval (struct date_t *d)
+{
+    return d->end.year != 0;
+}
 
 #define LEAP_SECOND_TABLE \
     LEAP_SECOND_ROW (1972, 1, 1) \
@@ -176,30 +195,120 @@ int december_leap_second (int year)
 #define DATE(year, month, day, hour, minute, second, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute) \
     ((struct date_t){{{year, month, day, hour, minute, second}}, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute})
 
-#define DATE_DAY(year, month, day) \
-    (DATE(year, month, day, -1, -1, -1, 0.0, false, 0, 0))
-#define DATE_MONTH(year, month) \
-    (DATE(year, month, -1, -1, -1, -1, 0.0, false, 0, 0))
-#define DATE_YEAR(year) \
-    (DATE(year, -1, -1, -1, -1, -1, 0.0, false, 0, 0))
+#define DATE_YEAR(year, utc_offset_hour, utc_offset_minute) \
+    (DATE(year, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, true, utc_offset_hour, utc_offset_minute))
+#define DATE_MONTH(year, month, utc_offset_hour, utc_offset_minute) \
+    (DATE(year, month, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, true, utc_offset_hour, utc_offset_minute))
+#define DATE_DAY(year, month, day, utc_offset_hour, utc_offset_minute) \
+    (DATE(year, month, day, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, true, utc_offset_hour, utc_offset_minute))
+#define DATE_HOUR(year, month, day, hour, utc_offset_hour, utc_offset_minute) \
+    (DATE(year, month, day, hour, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, true, utc_offset_hour, utc_offset_minute))
+#define DATE_MINUTE(year, month, day, hour, minute, utc_offset_hour, utc_offset_minute) \
+    (DATE(year, month, day, hour, minute, D_COMPONENT_UNSET, 0.0, true, utc_offset_hour, utc_offset_minute))
+#define DATE_SECOND(year, month, day, hour, minute, second, utc_offset_hour, utc_offset_minute) \
+    (DATE(year, month, day, hour, minute, second, 0.0, true, utc_offset_hour, utc_offset_minute))
 
-#define DATE_P(year, month, day, hour, minute, second, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute) \
-    &((struct date_t){{{year, month, day, hour, minute, second}}, second_fraction, is_set_utc_offset, utc_offset_hour, utc_offset_minute})
+// Macros that leave UTC offset unset
+#define DATE_YEAR_NTZ(year) \
+    (DATE(year, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, true, 0, 0))
+#define DATE_MONTH_NTZ(year, month) \
+    (DATE(year, month, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, false, 0, 0))
+#define DATE_DAY_NTZ(year, month, day) \
+    (DATE(year, month, day, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, false, 0, 0))
+#define DATE_HOUR_NTZ(year, month, day, hour) \
+    (DATE(year, month, day, hour, D_COMPONENT_UNSET, D_COMPONENT_UNSET, 0.0, false, 0, 0))
+#define DATE_MINUTE_NTZ(year, month, day, hour, minute) \
+    (DATE(year, month, day, hour, minute, D_COMPONENT_UNSET, 0.0, false, 0, 0))
+#define DATE_SECOND_NTZ(year, month, day, hour, minute, second) \
+    (DATE(year, month, day, hour, minute, second, 0.0, false, 0, 0))
 
-#define DATE_ELEMENT(year, month, day, hour, minute, second) \
-    ((struct date_element_t){{{year, month, day, hour, minute, second}}})
 
-#define DATE_ELEMENT_DAY(year, month, day) \
-    (DATE_ELEMENT(year, month, day, -1, -1, -1))
-#define DATE_ELEMENT_MONTH(year, month) \
-    (DATE_ELEMENT(year, month, -1, -1, -1, -1))
-#define DATE_ELEMENT_YEAR(year) \
-    (DATE_ELEMENT(year, -1, -1, -1, -1, -1))
+#define DT(year, month, day, hour, minute, second) \
+    ((struct date_tuple_t){{{year, month, day, hour, minute, second}}})
 
-#define DATE_ELEMENT_P(year, month, day, hour, minute, second) \
-    &((struct date_element_t){{{year, month, day, hour, minute, second}}})
+#define DT_YEAR(year) \
+    (DT(year, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET))
+#define DT_MONTH(year, month) \
+    (DT(year, month, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET))
+#define DT_DAY(year, month, day) \
+    (DT(year, month, day, D_COMPONENT_UNSET, D_COMPONENT_UNSET, D_COMPONENT_UNSET))
+#define DT_HOUR(year, month, day, hour) \
+    (DT(year, month, day, hour, D_COMPONENT_UNSET, D_COMPONENT_UNSET))
+#define DT_MINUTE(year, month, day, hour, minute) \
+    (DT(year, month, day, hour, minute, D_COMPONENT_UNSET))
+#define DT_SECOND(year, month, day, hour, minute, second) \
+    (DT(year, month, day, hour, minute, second))
+
+#define DATE_INTERVAL_NTZ(s, e) \
+    ((struct date_t){.start=s,.end=e, 0.0, false, 0, 0})
+#define DATE_INTERVAL(s, e, utc_offset_hour, utc_offset_minute) \
+    ((struct date_t){.start=s,.end=e, 0.0, true, utc_offset_hour, utc_offset_minute})
+
+
+#define BOOL_STR(value) (value) ? "true" : "false"
+
 
 void date_get_value_range (enum reference_time_duration_t precision, struct date_t *date, int *min, int *max);
+void date_tuple_get_value_range (enum reference_time_duration_t precision, struct date_tuple_t *date_tuple, int *min, int *max);
+
+bool date_tuple_add_value_restricted (struct date_tuple_t *date_tuple, int value, enum reference_time_duration_t duration)
+{
+    bool success = true;
+
+    struct date_tuple_t result = *date_tuple;
+    int min, max;
+
+    struct date_tuple_t relative = {0};
+    enum reference_time_duration_t curr_duration = duration;
+    while (curr_duration != D_YEAR && value != 0) {
+        date_tuple_get_value_range (curr_duration, date_tuple, &min, &max);
+        int new_val = date_tuple->v[curr_duration] + value;
+        if (new_val > max) {
+            int remainder = new_val - max;
+
+            relative.v[curr_duration] = remainder;
+            value = 1;
+
+        } else if (new_val < min) {
+            int remainder = min - new_val;
+
+            relative.v[curr_duration] = -remainder;
+            value = D_COMPONENT_UNSET;
+
+        } else {
+            result.v[curr_duration] = date_tuple->v[curr_duration] + value;
+            relative.v[curr_duration] = 0;
+            value = 0;
+        }
+
+        curr_duration--;
+    }
+    result.year = date_tuple->year + value;
+
+    curr_duration = D_MONTH;
+    while (success && curr_duration <= duration) {
+        date_tuple_get_value_range (curr_duration, &result, &min, &max);
+        if (relative.v[curr_duration] > 0) {
+            result.v[curr_duration] = min + relative.v[curr_duration] - 1;
+
+        } else if (relative.v[curr_duration] < 0) {
+            result.v[curr_duration] = max + relative.v[curr_duration] + 1;
+        }
+
+        if (result.v[curr_duration] < min || result.v[curr_duration] > max) {
+            success = false;
+        }
+
+        curr_duration++;
+    }
+
+    if (success) {
+        *date_tuple = result;
+    }
+
+    return success;
+}
+
 
 // NOTE: Assumes the added values don't exceed the maximum range for the passed
 // duration. For instance, adding 120 minutes instead of 2 hours will result in
@@ -226,7 +335,7 @@ bool date_add_value_restricted (struct date_t *date, int value, enum reference_t
             int remainder = min - new_val;
 
             relative.v[curr_duration] = -remainder;
-            value = -1;
+            value = D_COMPONENT_UNSET;
 
         } else {
             result.v[curr_duration] = date->v[curr_duration] + value;
@@ -262,11 +371,11 @@ bool date_add_value_restricted (struct date_t *date, int value, enum reference_t
     return success;
 }
 
-void date_add_value (struct date_t *date, int value, enum reference_time_duration_t duration)
+bool date_add_value (struct date_t *date, int value, enum reference_time_duration_t duration)
 {
     // TODO: Use date_add_value_restricted() to compute unrestricted values.
     // :unrestricted_date_addition
-    date_add_value_restricted (date, value, duration);
+    return date_add_value_restricted (date, value, duration);
 }
 
 void date_get_now_d (struct date_t *date)
@@ -315,8 +424,10 @@ void date_to_utc (struct date_t *date, struct date_t *res)
     res->utc_offset_minute = 0;
 }
 
-void date_get_value_range (enum reference_time_duration_t precision, struct date_t *date, int *min, int *max)
+void date_tuple_get_value_range (enum reference_time_duration_t precision, struct date_tuple_t *date_tuple, int *min, int *max)
 {
+    assert(precision < D_SECOND);
+
     int min_l = 0, max_l = 0;
     if (precision == D_YEAR) {
         min_l = 1582;
@@ -329,8 +440,8 @@ void date_get_value_range (enum reference_time_duration_t precision, struct date
     } else if (precision == D_DAY) {
         min_l = 1;
 
-        int year = date->year;
-        int month = date->month;
+        int year = date_tuple->year;
+        int month = date_tuple->month;
         assert (month >= 1 && month <=12);
 
         if (month == 4 || month == 6 || month == 9 || month == 11) {
@@ -355,6 +466,18 @@ void date_get_value_range (enum reference_time_duration_t precision, struct date
     } else if (precision == D_MINUTE) {
         min_l = 0;
         max_l = 59;
+
+    }
+
+    if (min != NULL) *min = min_l;
+    if (max != NULL) *max = max_l;
+}
+
+void date_get_value_range (enum reference_time_duration_t precision, struct date_t *date, int *min, int *max)
+{
+    int min_l = 0, max_l = 0;
+    if (precision < D_SECOND) {
+        date_tuple_get_value_range (precision, &date->start, &min_l, &max_l);
 
     } else if (precision == D_SECOND) {
         min_l = 0;
@@ -402,7 +525,7 @@ bool date_is_valid_d (struct date_t *date, string_t *error)
     bool is_valid = true;
 
     enum reference_time_duration_t curr_duration = D_YEAR;
-    while (is_valid && curr_duration < D_REFERENCE_TIME_DURATION_LEN && date->v[curr_duration] != -1) {
+    while (is_valid && curr_duration < D_REFERENCE_TIME_DURATION_LEN && date->v[curr_duration] != D_COMPONENT_UNSET) {
         int min, max;
         date_get_value_range (curr_duration, date, &min, &max);
         if (date->v[curr_duration] < min || date->v[curr_duration] > max) {
@@ -452,8 +575,18 @@ bool date_is_valid_d (struct date_t *date, string_t *error)
 
 int date_cmp (struct date_t *d1, struct date_t *d2)
 {
-    assert (d1 != NULL && d2 != NULL);
+    assert(d1 != NULL && d2 != NULL);
 
+    // Can't compare dates where one has UTC offset and the other one doesn't.
+    assert(d1->is_set_utc_offset == d2->is_set_utc_offset);
+
+    // TODO: For now we fail if we try to compare a non-interval date with an
+    // interval one. We could try harder and check if the interval can be
+    // reduced to a non-interval date.
+    assert(date_is_interval(d1) == date_is_interval(d2));
+
+    // If both dates have UTC offset but it's different, normalize both to UTC
+    // for comparison purposes. This doesn't mutate the passed dates.
     struct date_t d1_l, d2_l;
     if (d1->is_set_utc_offset && d2->is_set_utc_offset &&
         (d1->utc_offset_hour != d2->utc_offset_hour || d1->utc_offset_minute != d2->utc_offset_minute) ) {
@@ -464,47 +597,84 @@ int date_cmp (struct date_t *d1, struct date_t *d2)
         d2 = &d2_l;
     }
 
-    int diff = d1->year - d2->year;
+    int diff;
 
-    if (diff == 0) {
-        diff = d1->month - d2->month;
-    }
+    if (!date_is_interval(d1)) {
+        diff = d1->year - d2->year;
 
-    if (diff == 0) {
-        diff = d1->day - d2->day;
-    }
+        if (diff == 0) {
+            diff = d1->month - d2->month;
+        }
 
-    if (diff == 0) {
-        diff = d1->hour - d2->hour;
-    }
+        if (diff == 0) {
+            diff = d1->day - d2->day;
+        }
 
-    if (diff == 0) {
-        diff = d1->minute - d2->minute;
-    }
+        if (diff == 0) {
+            diff = d1->hour - d2->hour;
+        }
 
-    if (diff == 0) {
-        diff = d1->second - d2->second;
+        if (diff == 0) {
+            diff = d1->minute - d2->minute;
+        }
+
+        if (diff == 0) {
+            diff = d1->second - d2->second;
+        }
+
+    } else {
+        diff = d1->start.year - d2->start.year;
+
+        if (diff == 0) {
+            diff = d1->start.month - d2->start.month;
+        }
+
+        if (diff == 0) {
+            diff = d1->start.day - d2->start.day;
+        }
+
+        if (diff == 0) {
+            diff = d1->start.hour - d2->start.hour;
+        }
+
+        if (diff == 0) {
+            diff = d1->start.minute - d2->start.minute;
+        }
+
+        if (diff == 0) {
+            diff = d1->start.second - d2->start.second;
+        }
+
+
+        if (diff == 0) {
+            diff = d1->end.year - d2->end.year;
+        }
+
+        if (diff == 0) {
+            diff = d1->end.month - d2->end.month;
+        }
+
+        if (diff == 0) {
+            diff = d1->end.day - d2->end.day;
+        }
+
+        if (diff == 0) {
+            diff = d1->end.hour - d2->end.hour;
+        }
+
+        if (diff == 0) {
+            diff = d1->end.minute - d2->end.minute;
+        }
+
+        if (diff == 0) {
+            diff = d1->end.second - d2->end.second;
+        }
     }
 
     if (diff == 0) {
         double ddiff = d1->second_fraction - d2->second_fraction;
         if (ddiff != 0) {
             diff = ddiff < 0 ? -1 : 1;
-        }
-    }
-
-    if (diff == 0 && (d1->is_set_utc_offset || d2->is_set_utc_offset))  {
-        if (d1->is_set_utc_offset == d2->is_set_utc_offset) {
-            if (diff == 0) {
-                diff = d1->utc_offset_hour - d2->utc_offset_hour;
-            }
-
-            if (diff == 0) {
-                diff = d1->utc_offset_minute - d2->utc_offset_minute;
-            }
-
-        } else {
-            diff = -1;
         }
     }
 
@@ -602,7 +772,6 @@ bool date_scanner_char (struct date_scanner_t *scnr, char c)
 }
 
 
-#define date_reset(d) date_set(d,0,-1,-1,-1,-1,-1,0.0,false,0,0)
 void date_set (struct date_t *d,
                int year, int month, int day,
                int hour, int minute, int second, double second_fraction,
@@ -619,22 +788,68 @@ void date_set (struct date_t *d,
     d->utc_offset_hour = utc_offset_hour;
     d->utc_offset_minute = utc_offset_minute;
 }
-#define BOOL_STR(value) (value) ? "true" : "false"
+
+// TODO: This can be done much faster using vector instructions.
+bool date_tuple_is_equals (struct date_tuple_t *dt1, struct date_tuple_t *dt2)
+{
+    int i=0;
+    while (i < D_REFERENCE_TIME_DURATION_LEN && dt1->v[i] == dt2->v[i]) i++;
+
+    return i == D_REFERENCE_TIME_DURATION_LEN;
+}
 
 void str_date_internal (string_t *str, struct date_t *d, struct date_t *expected)
 {
-    str_cat_printf (str, " year: %d", d->year);
-    (expected != NULL && d->year != expected->year) ?  str_cat_printf (str, " (expected %d)\n", expected->year) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " month: %d", d->month);
-    (expected != NULL && d->month != expected->month) ?  str_cat_printf (str, " (expected %d)\n", expected->month) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " day: %d", d->day);
-    (expected != NULL && d->day != expected->day) ?  str_cat_printf (str, " (expected %d)\n", expected->day) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " hour: %d", d->hour);
-    (expected != NULL && d->hour != expected->hour) ?  str_cat_printf (str, " (expected %d)\n", expected->hour) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " minute: %d", d->minute);
-    (expected != NULL && d->minute != expected->minute) ?  str_cat_printf (str, " (expected %d)\n", expected->minute) : str_cat_printf (str, "\n");
-    str_cat_printf (str, " second: %d", d->second);
-    (expected != NULL && d->second != expected->second) ?  str_cat_printf (str, " (expected %d)\n", expected->second) : str_cat_printf (str, "\n");
+    if (!date_is_interval(d)) {
+        str_cat_printf (str, " year: %d", d->year);
+        (expected != NULL && d->year != expected->year) ?  str_cat_printf (str, " (expected %d)\n", expected->year) : str_cat_printf (str, "\n");
+        str_cat_printf (str, " month: %d", d->month);
+        (expected != NULL && d->month != expected->month) ?  str_cat_printf (str, " (expected %d)\n", expected->month) : str_cat_printf (str, "\n");
+        str_cat_printf (str, " day: %d", d->day);
+        (expected != NULL && d->day != expected->day) ?  str_cat_printf (str, " (expected %d)\n", expected->day) : str_cat_printf (str, "\n");
+        str_cat_printf (str, " hour: %d", d->hour);
+        (expected != NULL && d->hour != expected->hour) ?  str_cat_printf (str, " (expected %d)\n", expected->hour) : str_cat_printf (str, "\n");
+        str_cat_printf (str, " minute: %d", d->minute);
+        (expected != NULL && d->minute != expected->minute) ?  str_cat_printf (str, " (expected %d)\n", expected->minute) : str_cat_printf (str, "\n");
+        str_cat_printf (str, " second: %d", d->second);
+        (expected != NULL && d->second != expected->second) ?  str_cat_printf (str, " (expected %d)\n", expected->second) : str_cat_printf (str, "\n");
+
+    } else {
+        if (!date_tuple_is_equals(&d->start, &expected->start)) {
+            str_cat_printf (str, " start.year: %d", d->start.year);
+            (expected != NULL && d->start.year != expected->start.year) ?  str_cat_printf (str, " (expected %d)\n", expected->start.year) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " start.month: %d", d->start.month);
+            (expected != NULL && d->start.month != expected->start.month) ?  str_cat_printf (str, " (expected %d)\n", expected->start.month) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " start.day: %d", d->start.day);
+            (expected != NULL && d->start.day != expected->start.day) ?  str_cat_printf (str, " (expected %d)\n", expected->start.day) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " start.hour: %d", d->start.hour);
+            (expected != NULL && d->start.hour != expected->start.hour) ?  str_cat_printf (str, " (expected %d)\n", expected->start.hour) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " start.minute: %d", d->start.minute);
+            (expected != NULL && d->start.minute != expected->start.minute) ?  str_cat_printf (str, " (expected %d)\n", expected->start.minute) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " start.second: %d", d->start.second);
+            (expected != NULL && d->start.second != expected->start.second) ?  str_cat_printf (str, " (expected %d)\n", expected->start.second) : str_cat_printf (str, "\n");
+        } else {
+            str_cat_printf (str, " start: EQUALS\n");
+        }
+
+        if (!date_tuple_is_equals(&d->end, &expected->end)) {
+            str_cat_printf (str, " end.year: %d", d->end.year);
+            (expected != NULL && d->end.year != expected->end.year) ?  str_cat_printf (str, " (expected %d)\n", expected->end.year) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " end.month: %d", d->end.month);
+            (expected != NULL && d->end.month != expected->end.month) ?  str_cat_printf (str, " (expected %d)\n", expected->end.month) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " end.day: %d", d->end.day);
+            (expected != NULL && d->end.day != expected->end.day) ?  str_cat_printf (str, " (expected %d)\n", expected->end.day) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " end.hour: %d", d->end.hour);
+            (expected != NULL && d->end.hour != expected->end.hour) ?  str_cat_printf (str, " (expected %d)\n", expected->end.hour) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " end.minute: %d", d->end.minute);
+            (expected != NULL && d->end.minute != expected->end.minute) ?  str_cat_printf (str, " (expected %d)\n", expected->end.minute) : str_cat_printf (str, "\n");
+            str_cat_printf (str, " end.second: %d", d->end.second);
+            (expected != NULL && d->end.second != expected->end.second) ?  str_cat_printf (str, " (expected %d)\n", expected->end.second) : str_cat_printf (str, "\n");
+        } else {
+            str_cat_printf (str, " end: EQUALS\n");
+        }
+    }
+
     str_cat_printf (str, " second_fraction: %f", d->second_fraction);
     (expected != NULL && d->second_fraction != expected->second_fraction) ?  str_cat_printf (str, " (expected %f)\n", expected->second_fraction) : str_cat_printf (str, "\n");
     str_cat_printf (str, " is_set_utc_offset: %s", BOOL_STR(d->is_set_utc_offset));
@@ -729,7 +944,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
         date_scanner_set_error (&scnr, "Year must be 4 digits long.");
     }
 
-    int32_t month = -1;
+    int32_t month = D_COMPONENT_UNSET;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '-')) {
             if (!date_scanner_int (&scnr, &month)) {
@@ -747,7 +962,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
         }
     }
 
-    int32_t day = -1;
+    int32_t day = D_COMPONENT_UNSET;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, '-')) {
             if (!date_scanner_int (&scnr, &day)) {
@@ -765,7 +980,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
         }
     }
 
-    int32_t hour = -1;
+    int32_t hour = D_COMPONENT_UNSET;
     if (!scnr.is_eof) {
         if (scan_time_separator (&scnr)) {
             if (!date_scanner_int (&scnr, &hour)) {
@@ -784,7 +999,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
         }
     }
 
-    int32_t minute = -1;
+    int32_t minute = D_COMPONENT_UNSET;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, ':')) {
             if (!date_scanner_int (&scnr, &minute)) {
@@ -799,7 +1014,7 @@ bool date_read (char *date_time_str, struct date_t *date, string_t *message)
         }
     }
 
-    int32_t second = -1;
+    int32_t second = D_COMPONENT_UNSET;
     if (!scnr.is_eof) {
         if (date_scanner_char (&scnr, ':')) {
             if (!date_scanner_int (&scnr, &second)) {
@@ -993,11 +1208,8 @@ int date_generic_zellers_congruence(struct date_t *reference, struct date_t *dat
 }
 
 struct recurrent_event_t {
-    // I think frequency can be stored inside date_element, will always have
-    // spare int there that are not used due to the choice of scale.
     int frequency;
     enum reference_time_duration_t scale;
-    struct date_element_t date_element;
     struct date_t start;
 
     int count;
@@ -1005,9 +1217,8 @@ struct recurrent_event_t {
 };
 
 bool recurrent_event_set (struct recurrent_event_t *re,
-                          int frequency, enum reference_time_duration_t scale,
-                          struct date_element_t *date_element, struct date_t *start_date,
-                          string_t *error)
+    int frequency, enum reference_time_duration_t scale, struct date_t *start_date,
+    string_t *error)
 {
     assert (re != NULL && start_date != NULL);
 
@@ -1019,55 +1230,57 @@ bool recurrent_event_set (struct recurrent_event_t *re,
     if (frequency < 2) frequency = 1;
     re->frequency = frequency;
     re->scale = scale;
-
-    if (date_element != NULL) {
-        re->date_element = *date_element;
-    } else {
-        // NOTE: A zeroed out date element means unset. Checking year==0 can
-        // detect this. A set date element will have year==-1.
-        re->date_element = (struct date_element_t){0};
-    }
-
-    if (date_element != NULL) {
-        enum reference_time_duration_t curr_duration = D_YEAR;
-        while (date_element->v[curr_duration] == -1) curr_duration++;
-        if (curr_duration != scale + 1) {
-            success = false;
-            str_cat_printf (error, "Date element's undefined must be up to scale's precision value");
-        }
-    }
-
     re->start = *start_date;
 
     return success;
+}
+
+// TODO: This still needs work
+//  - Support for D_COMPONENT_LAST is missing
+//  - This is probably where we should implement reduction of non minimal intervals
+struct date_t date_resolve_interval (struct date_t *d)
+{
+    struct date_t result = *d;
+
+    int i = 0;
+    while (i < D_REFERENCE_TIME_DURATION_LEN && result.end.v[i] == D_COMPONENT_UNSET) {
+        result.end.v[i] = result.start.v[i];
+        i++;
+    }
+
+    // Adjust previous reference time duration if the date would cause an
+    // interval where end would be before the start. This makes the resolution
+    // of the relative end tuple be the closest "next" date.
+    if (result.start.v[i] > result.end.v[i] && i > 0) {
+        date_tuple_add_value_restricted (&result.end, 1, i-1);
+    }
+
+    return result;
 }
 
 bool recurrent_event_next (struct recurrent_event_t *re, struct date_t *curr_occurence, struct date_t *next)
 {
     assert (re != NULL && next != NULL);
 
+    bool success = false;
     struct date_t result;
+
     if (curr_occurence == NULL) {
         result = re->start;
+        success = true;
+
     } else {
         result = *curr_occurence;
-    }
-    
-    date_add_value (&result, re->frequency, re->scale);
-
-    if (re->date_element.year != 0) {
-        enum reference_time_duration_t curr_duration = D_YEAR;
-        while (re->date_element.v[curr_duration] == -1) curr_duration++;
-
-        while (curr_duration < D_REFERENCE_TIME_DURATION_LEN && re->date_element.v[curr_duration] != -1) {
-            result.v[curr_duration] = re->date_element.v[curr_duration];
-            curr_duration++;
-        }
+        success = date_add_value (&result, re->frequency, re->scale);
     }
 
-    *next = result;
+    result = date_resolve_interval (&result);
 
-    return false;
+    if (success) {
+        *next = result;
+    }
+
+    return success;
 }
 
 //////////////////

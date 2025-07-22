@@ -1,0 +1,11 @@
+Root Test ............................. [1;31m[KFAILED[m[K
+    Root Test 1 ........................... [1;32m[KOK[m[K
+    Root Test 2 ........................... [1;31m[KFAILED[m[K
+        Test "Root Test 2" failed
+        Got false but expected true
+    Test Group ............................ [1;31m[KFAILED[m[K
+        Test 1 ................................ [1;32m[KOK[m[K
+        Test 2 ................................ [1;31m[KFAILED[m[K
+            Test "Test 2" failed
+            Got true but expected false
+        Test 3 ................................ [1;32m[KOK[m[K

@@ -42,10 +42,9 @@ void create_fs_tree(char *base_dir, char *entries[], int num_entries)
 #include "binary_tree_tests.c"
 #include "datetime_tests.c"
 #include "directory_iterator_tests.c"
+#include "test_logger_tests.c"
 
 // TODO: Add a CLI to select which tests get executed and which ones don't.
-// TODO: Make tests silent and return true on success, on fail concatenate
-// errors into a log.
 int main (int argc, char **argv)
 {
     struct test_ctx_t t = {0};
@@ -53,7 +52,8 @@ int main (int argc, char **argv)
 
     // TODO: Add these to test logger
     memory_pool_tests ();
-    printf ("\n");
+
+    test_logger_tests (&t);
 
     string_tests (&t);
 

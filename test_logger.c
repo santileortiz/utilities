@@ -124,9 +124,6 @@ void _test_pop (struct test_ctx_t *tc, bool success)
     if (tc->last_test != NULL) {
         if (tc->show_all_children || !tc->last_test_success) {
             str_cat_indented (&tc->last_test->output, &tc->last_test->error, TEST_INDENT);
-            // TODO: Should this be indented?
-            // :indented_children_cat
-            str_cat (&tc->last_test->output, &tc->last_test->children);
         }
 
         if (tc->test_stack) {
@@ -167,8 +164,7 @@ void _test_pop (struct test_ctx_t *tc, bool success)
     }
 
     if (tc->show_all_children || !success) {
-        str_cat_indented (&curr_test->output, &curr_test->error, TEST_INDENT);
-        // TODO: Should this be indented?
+        // TODO: Should this be indented? It seems to me not...
         // :indented_children_cat
         str_cat (&curr_test->output, &curr_test->children);
     }
