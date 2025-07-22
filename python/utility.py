@@ -556,6 +556,12 @@ def ecma_cyan(s):
 def ecma_white(s):
  return f"\033[1;37m\033[K{s}\033[m\033[K"
 
+def ecma_gray(s):
+ return ecma_code(s, 8)
+
+def ecma_grey(s):
+ return ecma_code(s, 8)
+
 def ecma_bold(s):
  return f"\033[1m\033[K{s}\033[m\033[K"
 
@@ -627,11 +633,13 @@ def get_snip ():
             return sys.argv[1]
 
 def get_cache_dict ():
-    cache_dict = {}
+    cache_dict = None
+
     if os.path.exists('mkpy/cache'):
         cache = open ('mkpy/cache', 'r')
         cache_dict = ast.literal_eval (cache.readline())
         cache.close ()
+
     return cache_dict
 
 def set_cache_dict (cache_dict):
@@ -687,7 +695,7 @@ def store_get (name, default=None):
 
     cache_dict = get_cache_dict ()
 
-    if name not in cache_dict.keys ():
+    if cache_dict != None and name not in cache_dict.keys ():
         if default != None:
             cache_dict[name] = default
         else:
@@ -781,6 +789,8 @@ def pers_func_f (name, func, args, kwargs={}):
 
     call_func = False
     cache_dict = get_cache_dict ()
+    if cache_dict == None:
+        return
 
     # If args changed from last call update them in cache and trigger
     # execution of func
@@ -883,7 +893,7 @@ def ensure_dir (path_s):
     if not path_exists(resolved_path):
         os.makedirs (resolved_path)
 
-def unpack_zip(fname, curr_path='', extensions=['.zip']):
+def unpack_zip(fname, curr_path='', extensions=['.zip'], filter=''):
     """
     Extract nested zip files recursively. Compressed files are left untouched,
     the extracted result will be available in a directory with the same name
@@ -905,7 +915,7 @@ def unpack_zip(fname, curr_path='', extensions=['.zip']):
     for p in extracted_list:
         try:
             _, ext = path_split(p)
-            if ext in extensions:
+            if ext in extensions and filter in p:
                 unpack_zip(p, curr_path=target_path)
         except:
             print(ecma_red('error:') + f' could not extract {p}')
@@ -1321,9 +1331,11 @@ def pymk_default (skip_snip_cache=[]):
 
     else:
         call_user_function (t)
-        old_t = store_get ('last_snip', default=None)
-        if t != 'default' and t != 'install' and t != old_t and t not in skip_snip_cache:
-            store ('last_snip', value=t)
+
+        if get_cache_dict () != None:
+            old_t = store_get ('last_snip', default=None)
+            if t != 'default' and t != 'install' and t != old_t and t not in skip_snip_cache:
+                store ('last_snip', value=t)
 
 ##############################
 # File scanner API
