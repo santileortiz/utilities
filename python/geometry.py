@@ -1,4 +1,4 @@
-from mkpy.utility import *
+from utility import *
 
 import math, functools
 from collections import namedtuple
