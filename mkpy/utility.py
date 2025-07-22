@@ -1,7 +1,15 @@
 import sys, subprocess, os, ast, shutil, platform, re, json, pickle, zipfile, shlex
 
+import textwrap
 import importlib.util, inspect, pathlib, filecmp
 from itertools import permutations
+from collections import namedtuple
+
+try:
+    # Used by pretty_dict()
+    from natsort import natsorted
+except:
+    natsorted = sorted
 
 from enum import Enum
 
@@ -114,7 +122,7 @@ def get_completions_path():
 
     return completions_path
 
-def check_completions ():
+def completions_exist ():
     completions_path = get_completions_path()
     if completions_path == '' or not path_exists(completions_path):
         return False
@@ -135,7 +143,7 @@ def recommended_opt (s):
     return res
 
 def is_interactive():
-    return "i" in ex("echo $-", ret_stdout=True, echo=False)
+    return os.isatty(sys.stdin.fileno())
 
 builtin_completions = []
 cli_completions = {}
@@ -149,13 +157,13 @@ def handle_tab_complete ():
     global cli_completions, builtin_completions
 
     # Check that the tab completion script is installed
-    if not check_completions () and is_interactive():
+    if is_interactive():
         if get_cli_bool_opt('--install_completions'):
             print ('Installing tab completions...')
-            ex ('cp mkpy/pymk.py {}'.format(get_completions_path()))
+            ex (f'cp mkpy/pymk.py {get_completions_path()}')
             exit ()
 
-        else:
+        elif not completions_exist ():
             if is_macos():
                 warn('Tab completions not installed:')
                 print(' 1) Install brew (https://brew.sh/)')
@@ -164,8 +172,7 @@ def handle_tab_complete ():
             elif is_linux():
                 warn('Tab completions not installed:')
                 print(' Use "sudo ./pymk.py --install_completions" to install them\n')
-
-        return
+            return
 
     # Add the builtin tab completions the user wants
     if len(builtin_completions) > 0:
@@ -187,6 +194,7 @@ def handle_tab_complete ():
         if not match_found:
             f_names = [s for s,f in get_user_functions()]
             print (' '.join(f_names))
+
             if line[-1] == '-':
                 def_opts = [recommended_opt(s) for s in cli_completions.keys()]
                 print (' '.join(def_opts))
@@ -337,9 +345,15 @@ def get_cli_no_opt ():
             if sys.argv[i] in cli_arg_options and len(sys.argv) > i+1:
                 i += 2
             else:
-                i += 1
-                if not(sys.argv[i] in cli_bool_options and len(sys.argv) > i):
+                if sys.argv[i] in cli_arg_options and len(sys.argv) <= i+1:
+                    # TODO: This doesn't detect all the cases where someone may
+                    # forget to pass the argument.
+                    print (f'Missing argument for CLI parameter: {sys.argv[i]}')
+
+                elif sys.argv[i] not in cli_bool_options:
                     print (f'Unknown CLI parameter: {sys.argv[i]}')
+
+                i += 1
         else:
             return sys.argv[i:]
     return None
@@ -460,7 +474,7 @@ def ex_bg_kill (pid):
     else:
         ex(f'kill {pid}')
 
-def ex (cmd, no_stdout=False, ret_stdout=False, echo=True, cwd=None):
+def ex (cmd, no_stdout=False, no_stderr=False, quiet=False, ret_stdout=False, echo=True, cwd=None):
     global g_dry_run
     global g_echo_mode
 
@@ -473,13 +487,28 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True, cwd=None):
     if g_echo_mode:
         return
 
+    # Somewhere I needed to also silence stderr when returning stdout so I was
+    # passing stderr=open(os.devnull, 'wb') to subprocess.check_output. The
+    # following is done just to be backward compatible with that, but really I
+    # should pass no_stderr=True wherever this was necessary, and not assume we
+    # want to silence stderr when returning stdout.
+    # TODO: Check all usages of ex() where I pass ret_stdout=True. What I said
+    # above, does it really make sense?, is it really a better API?. Maybe a
+    # better idea is to remove the ret_stdout parameter and instead create a
+    # new function that can be called like this:
+    #   return_code, stdout_str, stderr_str = ex_quiet(...)
+    if ret_stdout:
+        quiet = True
+
+    stdout_redirect = open(os.devnull, 'wb') if no_stdout or quiet else None
+    stderr_redirect = open(os.devnull, 'wb') if no_stderr or quiet else None
+
     if not ret_stdout:
-        redirect = open(os.devnull, 'wb') if no_stdout else None
-        return subprocess.call(cmd, shell=True, stdout=redirect, cwd=cwd)
+        return subprocess.call(cmd, shell=True, stdout=stdout_redirect, stderr=stderr_redirect, cwd=cwd)
     else:
         result = ""
         try:
-            result = subprocess.check_output(cmd, shell=True, stderr=open(os.devnull, 'wb'), cwd=cwd).decode().strip ()
+            result = subprocess.check_output(cmd, shell=True, stderr=stderr_redirect, cwd=cwd).decode().strip ()
         except subprocess.CalledProcessError as e:
             pass
         return result
@@ -562,6 +591,31 @@ def json_load(fname):
 def json_dump(obj, fname):
     with open (fname, 'w') as f:
         return json.dump(obj, f)
+
+def pretty_dict(d, title=None):
+    s = ''
+
+    if title != None:
+        s += title + '\n'
+
+    s += '{\n'
+    for key, value in natsorted(d.items(), key=lambda x: x[0]):
+        s += f"  {repr(key)} : {repr(value)}\n"
+    s += '}\n'
+    return s
+
+def pretty_list(lst, title=None):
+    s = ''
+
+    if title != None:
+        s += title + '\n'
+
+    for i in lst:
+        if title != None:
+            s += '  '
+        s += repr(i) + '\n'
+    return s
+
 
 def get_snip ():
     if len(sys.argv) == 1:
@@ -789,6 +843,11 @@ def path_exists (path_s):
     or a directory.
     """
     return pathlib.Path(path_resolve(path_s)).exists()
+
+def path_parse (path):
+    dirname, basename = os.path.split(path)
+    fname, extension = os.path.splitext(basename)
+    return (dirname, fname, extension)
 
 def path_dirname (path_s):
     return os.path.dirname(path_s)
@@ -1266,59 +1325,6 @@ def pymk_default (skip_snip_cache=[]):
         if t != 'default' and t != 'install' and t != old_t and t not in skip_snip_cache:
             store ('last_snip', value=t)
 
-##############################
-# File scanner API
-#
-# This is a per character file scanner API for Python. In my experience regex
-# and split/join make some small parsing functions simpler, but for involved
-# tasks, per character traversal is better and I've found Pythin's API to be
-# overly verbose.
-
-class file_scanner:
-    def __init__(self, string):
-        self.string = string
-
-        self.pos = 0
-        self.len = len(self.string)
-        self.is_eof = False
-
-    def advance_char(self):
-        if self.pos < self.len:
-            self.pos += 1
-
-        if self.pos == self.len:
-            self.is_eof = True
-
-    def char(self, c):
-        if self.string[self.pos] == c:
-            self.advance_char()
-            return True
-
-        return False
-
-    def str (self, s):
-        for c in s:
-            if c == self.string[self.pos]:
-                self.advance_char()
-            else:
-                return False
-
-    def to_char (self, c):
-        temp_pos = self.pos
-
-        while not self.is_eof and self.string[self.pos] != c:
-            self.advance_char()
-
-        if self.string[self.pos] == c:
-            self.advance_char()
-            return True
-        else:
-            return False
-
-    def consume_spaces (self):
-        while not self.is_eof and self.string[self.pos].isspace():
-            self.advance_char()
-
 ##########################
 # Custom status logger API
 #
@@ -1462,19 +1468,115 @@ def automatic_test_function(*args, **kwargs):
 
         return __wrapper
 
-def test(result, expected_result=None, name=None):
+class Test():
+    def __init__(self, name):
+        self.children_status = None
+        self.name = name
+        self.output = ''
+
+class TestContext():
+    def __init__(self):
+        self.width = 40
+        self.indent = 4
+
+        self.tests = []
+        self.force_output = False
+
+    def set_status(self, status):
+        if len(self.tests) > 0 and status != None:
+            if self.tests[-1].children_status == None:
+                self.tests[-1].children_status = status
+            else:
+                self.tests[-1].children_status &= status
+
+    def out(self, s):
+        if len(self.tests) == 0:
+            print (s)
+        else:
+            self.tests[-1].output += s + '\n'
+
+__g_test_context = TestContext()
+
+def test_force_output(value=True, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+    test_context.force_output = value
+
+def test_push(name, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    test_context.tests.append(Test(name))
+
+def test_result_string(s, result, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    unescaped = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', s)
+
+    return s + '.'*max(3, test_context.width-len(unescaped)) + ' ' + result
+
+def test_result_string_default(name, result, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    if result:
+        return test_result_string (f'{name}', ecma_green("OK"), test_context=test_context)
+    else:
+        return test_result_string (f'{name}', ecma_red("FAIL"), test_context=test_context)
+
+def test_pop(result=None, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    t = test_context.tests.pop()
+
+    if result == None:
+        result = t.children_status
+
+    print (test_result_string_default (t.name, result))
+
+    if result == False or t.children_status == False or test_context.force_output:
+        indented = textwrap.indent (t.output, ' '*(test_context.indent)*(len(test_context.tests)+1))
+        print (indented, end='')
+
+def test_error(message, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    indented = textwrap.indent (message, ' '*(test_context.indent)*(len(test_context.tests)))
+    test_context.out(indented)
+
+def test(result, expected_result=None, name=None, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
     if name == None:
         source = get_calling_test_source()
         name = f'{source} -> {result}'
 
+    success = None
     if expected_result != None:
         if result == expected_result:
-            print (f'{name} ... {ecma_green("OK")}')
+            success = True
         else:
-            print (f'{name} ... {ecma_red("FAIL")}')
+            success = False
 
+    if expected_result != None:
+        test_context.out(test_result_string_default(name, result == expected_result))
     else:
-        print (f'{name} -> {result} ... [?] ')
+        test_context.out(f'{name} -> {result} ... {ecma_yellow("?")} ')
+
+    test_context.set_status(success)
+
+    return success
 
 ##############
 # Regex tester
@@ -1496,7 +1598,7 @@ def get_color_by_idx(idx):
         return ecma_code_f(183)
 
 def regex_match_print (string, match_object):
-    res = string
+    res = ''
     if match_object != None:
         markers = {}
         for i in range(len(match_object.groups())+1):
@@ -1524,36 +1626,47 @@ def regex_match_print (string, match_object):
         last_pos = 0
         sorted_markers = [(key, markers[key]) for key in sorted(markers.keys())]
         for pos, markers_at_pos in sorted_markers:
-            print (string[last_pos:pos], end='')
+            res += string[last_pos:pos]
             for marker in markers_at_pos:
-                print (marker[1](marker[0]), end='')
+                res += marker[1](marker[0])
             last_pos = pos
-        print (string[last_pos:])
+        res += string[last_pos:]
 
     else:
-        print (string)
+        return string
 
-def regex_test(regex, test_str, should_match):
+    return res
+
+def regex_test(regex, test_str, should_match, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    out_str = ''
+
     result = re.search(regex, test_str)
 
     if (should_match and result != None) or (not should_match and result == None):
         if result != None:
-            print (ecma_green('OK MATCH'), end=' ')
+            out_str += ecma_green('OK MATCH')
         else:
-            print (ecma_green('OK NO MATCH'), end=' ')
+            out_str += ecma_green('OK NO MATCH')
 
-        regex_match_print (test_str, result)
+        out_str += ' ' + regex_match_print (test_str, result)
+
+        test_context.set_status(True)
 
     else:
         if result != None:
-            print (ecma_red('FAIL MATCH'), end=' ')
-            regex_match_print (test_str, result)
-            print (result)
-            print()
+            out_str += f"{ecma_red('FAIL MATCH')} {regex_match_print(test_str, result)}\n"
+            out_str += str(result) + '\n'
 
         else:
-            print (ecma_red('FAIL NO MATCH'), end=' ')
-            regex_match_print (test_str, result)
+            out_str += ecma_red('FAIL NO MATCH') + ' ' + regex_match_print (test_str, result)
+
+        test_context.set_status(False)
+
+    test_context.out(out_str)
 
 
 ############################################
