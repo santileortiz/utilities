@@ -78,7 +78,6 @@ void binary_tree_tests (struct test_ctx_t *t)
     char **arr;
     size_t arr_len;
     for (int key_arr_idx=0; get_test_key_list (key_arr_idx, &arr, &arr_len); key_arr_idx++) {
-        printf ("Arr Len: %ld\n", arr_len);
         bool success = true;
         test_push (t, "Key arr %d", key_arr_idx);
 

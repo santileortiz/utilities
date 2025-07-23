@@ -51,8 +51,7 @@ int main (int argc, char **argv)
     struct test_ctx_t t = {0};
     //t.show_all_children = true;
 
-    // TODO: Add these to test logger
-    memory_pool_tests ();
+    memory_pool_tests (&t);
 
     test_logger_tests (&t);
 
