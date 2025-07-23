@@ -16,9 +16,10 @@ def tests ():
 
 def run_tests ():
     tests()
-    print(ecma_bold('== C Tests =='))
+    print(ecma_bold('== C Tests =='), flush=True)
     ex('./bin/tests')
-    print(ecma_bold('== Python Tests =='))
+
+    print(ecma_bold('\n== Python Tests =='), flush=True)
     ex('python3 python/execute_tests.py')
 
 def linear_solver_usage ():

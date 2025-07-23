@@ -448,7 +448,7 @@ def ex_bg (cmd, echo=True, cwd=None, log=None):
     if g_dry_run:
         return
 
-    if echo or g_echo_mode: print (cmd)
+    if echo or g_echo_mode: print (cmd, flush=True)
 
     if g_echo_mode:
         return
@@ -482,7 +482,7 @@ def ex (cmd, no_stdout=False, no_stderr=False, quiet=False, ret_stdout=False, ec
     if g_dry_run:
         return
 
-    if echo or g_echo_mode: print (cmd)
+    if echo or g_echo_mode: print (cmd, flush=True)
 
     if g_echo_mode:
         return
