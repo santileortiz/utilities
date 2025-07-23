@@ -43,6 +43,7 @@ void create_fs_tree(char *base_dir, char *entries[], int num_entries)
 #include "datetime_tests.c"
 #include "directory_iterator_tests.c"
 #include "test_logger_tests.c"
+#include "olc_tests.c"
 
 // TODO: Add a CLI to select which tests get executed and which ones don't.
 int main (int argc, char **argv)
@@ -68,6 +69,8 @@ int main (int argc, char **argv)
     datetime_tests (&t);
 
     directory_iterator_tests (&t);
+
+    olc_tests (&t);
 
     printf ("\n%s", str_data(&t.result));
     test_ctx_destroy (&t);
