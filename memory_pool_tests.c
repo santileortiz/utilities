@@ -2,7 +2,6 @@
  * Copyright (C) 2019 Santiago León O.
  */
 
-// Test data structure for callback testing
 struct test_structure_t {
     int i;
     float f;
@@ -10,7 +9,7 @@ struct test_structure_t {
     string_t str_set;
 };
 
-// Global variable to track callback executions during tests
+// Global variable to track test_callback executions during tests
 static int g_callbacks_executed = 0;
 
 ON_DESTROY_CALLBACK(test_callback)
@@ -27,11 +26,24 @@ ON_DESTROY_CALLBACK(test_struct_callback)
     g_callbacks_executed++;
 }
 
+void push_test_struct (mem_pool_t *pool, int i, float f, char *str)
+{
+    struct test_structure_t *test_struct = 
+        (struct test_structure_t*) mem_pool_push_size_cb(pool, sizeof(struct test_structure_t), test_struct_callback);
+    test_struct->str_set = str_new ("");
+    test_struct->i = i;
+    test_struct->f = f;
+
+    // Test pooled strings
+    test_struct->str = str_new_pooled (pool, str);
+    str_set_pooled (pool, &test_struct->str_set, str);
+    str_cat_c (&test_struct->str_set, "(set)");
+}
+
 void memory_pool_tests (struct test_ctx_t *t)
 {
     test_push (t, "Memory Pool");
 
-    // Test 1: Basic allocation
     {
         test_push (t, "Basic allocation");
         mem_pool_t pool = {0};
@@ -45,7 +57,6 @@ void memory_pool_tests (struct test_ctx_t *t)
         mem_pool_destroy (&pool);
     }
 
-    // Test 2: Multiple allocations
     {
         test_push (t, "Multiple allocations");
         mem_pool_t pool = {0};
@@ -64,13 +75,26 @@ void memory_pool_tests (struct test_ctx_t *t)
         mem_pool_destroy (&pool);
     }
 
-    // Test 3: Callback functionality
+    {
+        test_push (t, "Zero-size allocation");
+        mem_pool_t pool = {0};
+
+        void *ptr = mem_pool_push_size(&pool, 0);
+        bool success = (ptr == NULL);
+
+        if (!success) {
+            str_cat_printf (t->error, "Zero-size allocation should return NULL\n");
+        }
+        test_pop (t, success);
+
+        mem_pool_destroy (&pool);
+    }
+
     {
         test_push (t, "Destroy callbacks");
         mem_pool_t pool = {0};
         g_callbacks_executed = 0;
 
-        // Allocate with callbacks
         mem_pool_push_size_cb(&pool, 100, test_callback);
         mem_pool_push_size_cb(&pool, 200, test_callback);
 
@@ -83,7 +107,6 @@ void memory_pool_tests (struct test_ctx_t *t)
         test_pop (t, success);
     }
 
-    // Test 4: Temporary memory markers - basic
     {
         test_push (t, "Temporary memory basic");
         mem_pool_t pool = {0};
@@ -115,39 +138,41 @@ void memory_pool_tests (struct test_ctx_t *t)
             str_cat_printf (t->error, "Before temp: %u, During temp: %u, After temp: %u\n",
                            used_before_temp, used_during_temp, used_after_temp);
         }
-        test_pop (t, success);
 
         mem_pool_destroy (&pool);
+
+        test_pop (t, success);
     }
 
-    // Test 5: Temporary memory with callbacks
     {
         test_push (t, "Temporary memory callbacks");
         mem_pool_t pool = {0};
         g_callbacks_executed = 0;
 
-        // Permanent allocation with callback
         mem_pool_push_size_cb(&pool, 100, test_callback);
 
         mem_pool_marker_t marker = mem_pool_begin_temporary_memory(&pool);
 
-        // Temporary allocations with callbacks
         mem_pool_push_size_cb(&pool, 200, test_callback);
         mem_pool_push_size_cb(&pool, 300, test_callback);
 
         mem_pool_end_temporary_memory(marker);
 
-        // Only temporary callbacks should have been called (2)
         bool success = (g_callbacks_executed == 2);
         if (!success) {
             str_cat_printf (t->error, "Expected 2 temporary callbacks, got %d\n", g_callbacks_executed);
         }
-        test_pop (t, success);
 
-        mem_pool_destroy (&pool); // This should call the remaining permanent callback
+        mem_pool_destroy (&pool);
+
+        bool success = (g_callbacks_executed == 3);
+        if (!success) {
+            str_cat_printf (t->error, "Expected 3 temporary callbacks, got %d\n", g_callbacks_executed);
+        }
+
+        test_pop (t, success);
     }
 
-    // Test 6: Nested temporary memory
     {
         test_push (t, "Nested temporary memory");
         mem_pool_t pool = {0};
@@ -190,12 +215,12 @@ void memory_pool_tests (struct test_ctx_t *t)
             str_cat_printf (t->error, "Permanent: %u, Outer: %u, Max: %u, After inner: %u, Final: %u\n",
                            used_after_permanent, used_after_outer, used_max, used_after_inner, used_after_outer_end);
         }
-        test_pop (t, success);
 
         mem_pool_destroy (&pool);
+
+        test_pop (t, success);
     }
 
-    // Test 7: Pooled strings
     {
         test_push (t, "Pooled strings");
         mem_pool_t pool = {0};
@@ -205,45 +230,27 @@ void memory_pool_tests (struct test_ctx_t *t)
         str_set_pooled(&pool, &str2, "World");
 
         bool success = (strcmp(str_data(str1), "Hello") == 0 &&
-                       strcmp(str_data(&str2), "World") == 0);
+            strcmp(str_data(&str2), "World") == 0);
 
         if (!success) {
             str_cat_printf (t->error, "Pooled string failed: str1='%s', str2='%s'\n",
-                           str_data(str1), str_data(&str2));
+                str_data(str1), str_data(&str2));
         }
-        test_pop (t, success);
-
-        mem_pool_destroy (&pool); // Should automatically free pooled strings
-    }
-
-    // Test 8: Zero-size allocation
-    {
-        test_push (t, "Zero-size allocation");
-        mem_pool_t pool = {0};
-
-        void *ptr = mem_pool_push_size(&pool, 0);
-        bool success = (ptr == NULL);
-
-        if (!success) {
-            str_cat_printf (t->error, "Zero-size allocation should return NULL\n");
-        }
-        test_pop (t, success);
 
         mem_pool_destroy (&pool);
+
+        test_pop (t, success);
     }
 
-    // Test 9: Large allocation spanning multiple bins
     {
         test_push (t, "Multiple bins");
         mem_pool_t pool = {0};
         pool.min_bin_size = 1024; // Small bins to force multiple
 
-        // Allocate data that will span multiple bins
         char *data1 = mem_pool_push_array(&pool, 800, char);
         char *data2 = mem_pool_push_array(&pool, 800, char);
         char *data3 = mem_pool_push_array(&pool, 800, char);
 
-        // Fill with test patterns
         memset(data1, 'A', 800);
         memset(data2, 'B', 800);
         memset(data3, 'C', 800);
@@ -255,12 +262,12 @@ void memory_pool_tests (struct test_ctx_t *t)
         if (!success) {
             str_cat_printf (t->error, "Multi-bin allocation failed\n");
         }
-        test_pop (t, success);
 
         mem_pool_destroy (&pool);
+
+        test_pop (t, success);
     }
 
-    // Test 10: Pool statistics
     {
         test_push (t, "Pool statistics");
         mem_pool_t pool = {0};
@@ -277,12 +284,98 @@ void memory_pool_tests (struct test_ctx_t *t)
 
         if (!success) {
             str_cat_printf (t->error, "Pool statistics incorrect: allocated=%u, callback_info=%u\n",
-                           allocated, callback_info);
+                allocated, callback_info);
         }
-        test_pop (t, success);
 
         mem_pool_destroy (&pool);
+
+        test_pop (t, success);
+    }
+
+    {
+        test_push (t, "Exact usage validation");
+        mem_pool_t pool = {0};
+        g_callbacks_executed = 0;
+
+        size_t expected_struct_size =
+            sizeof(struct test_structure_t) +
+            sizeof(struct on_destroy_callback_info_t)*3 + /*test_struct_callback + 2 pooled strings*/
+            sizeof(string_t);
+
+        // We make a bin big enough to hold exactly 2 structs allocated by push_test_struct.
+        pool.min_bin_size = expected_struct_size*2;
+
+        // Verify struct sizes match expected values
+        bool success = (sizeof(bin_info_t) == 32 &&
+            sizeof(struct test_structure_t) == 32 &&
+            sizeof(struct on_destroy_callback_info_t) == 32 &&
+            sizeof(string_t) == 16 &&
+            expected_struct_size == 144);
+
+        if (!success) {
+            str_cat_printf (t->error, "Struct sizes don't match expected values\n");
+            str_cat_printf (t->error, "bin_info_t: %zu (expected 32)\n", sizeof(bin_info_t));
+            str_cat_printf (t->error, "test_structure_t: %zu (expected 32)\n", sizeof(struct test_structure_t));
+            str_cat_printf (t->error, "on_destroy_callback_info_t: %zu (expected 32)\n", sizeof(struct on_destroy_callback_info_t));
+            str_cat_printf (t->error, "string_t: %zu (expected 16)\n", sizeof(string_t));
+            str_cat_printf (t->error, "expected_struct_size: %zu (expected 144)\n", expected_struct_size);
+        }
+
+        push_test_struct (&pool, 10, 5.5, "This is a long string that will force a malloc");
+        uint32_t allocated_after_1st = mem_pool_allocated(&pool);
+        success = success && (allocated_after_1st == 320);
+
+        if (allocated_after_1st != 320 /* 2*expected_struct_size + bin_info_t*/) {
+            str_cat_printf (t->error, "After 1st struct: allocated=%u (expected 320)\n", allocated_after_1st);
+            success = false;
+        }
+
+        // Begin temporary memory
+        mem_pool_marker_t mrkr = mem_pool_begin_temporary_memory (&pool);
+
+        // Allocate 2nd struct - should still fit in same bin
+        push_test_struct (&pool, 4, 1.5, "And another long string");
+        uint32_t allocated_after_2nd = mem_pool_allocated(&pool);
+        success = success && (allocated_after_2nd == 320);
+
+        if (allocated_after_2nd != 320) {
+            str_cat_printf (t->error, "After 2nd struct: allocated=%u (expected 320)\n", allocated_after_2nd);
+            success = false;
+        }
+
+        // Allocate 3rd struct - should force new bin
+        push_test_struct (&pool, 20, 3.25, "bar");
+        uint32_t allocated_after_3rd = mem_pool_allocated(&pool);
+        success = success && (allocated_after_3rd == 640);
+
+        if (allocated_after_3rd != 640) {
+            str_cat_printf (t->error, "After 3rd struct: allocated=%u (expected 640)\n", allocated_after_3rd);
+            success = false;
+        }
+
+        // End temporary memory - should call callbacks for 2nd and 3rd structs
+        mem_pool_end_temporary_memory (mrkr);
+        success = success && (g_callbacks_executed == 2);
+
+        if (g_callbacks_executed != 2) {
+            str_cat_printf (t->error, "After ending temporary memory: callbacks=%d (expected 2)\n", g_callbacks_executed);
+            success = false;
+        }
+
+        // Second bin should've been freed
+        uint32_t allocated_after_temp_end = mem_pool_allocated(&pool);
+        success = success && (allocated_after_temp_end == 320);
+
+        if (allocated_after_temp_end != 320) {
+            str_cat_printf (t->error, "After temp memory end: allocated=%u (expected 320)\n", allocated_after_temp_end);
+            success = false;
+        }
+
+        mem_pool_destroy (&pool); // Should call callback for 1st struct
+
+        test_pop (t, success);
     }
 
     test_pop (t, true);
 }
+
