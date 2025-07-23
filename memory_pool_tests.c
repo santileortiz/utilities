@@ -165,9 +165,10 @@ void memory_pool_tests (struct test_ctx_t *t)
 
         mem_pool_destroy (&pool);
 
-        bool success = (g_callbacks_executed == 3);
+        // After destroying parent, permanent callback should also execute
+        success = (g_callbacks_executed == 3);
         if (!success) {
-            str_cat_printf (t->error, "Expected 3 temporary callbacks, got %d\n", g_callbacks_executed);
+            str_cat_printf (t->error, "Expected 3 total callbacks, got %d\n", g_callbacks_executed);
         }
 
         test_pop (t, success);
@@ -372,6 +373,85 @@ void memory_pool_tests (struct test_ctx_t *t)
         }
 
         mem_pool_destroy (&pool); // Should call callback for 1st struct
+
+        test_pop (t, success);
+    }
+
+    {
+        test_push (t, "Child pool management");
+        g_callbacks_executed = 0;
+        mem_pool_t parent_pool = {0};
+        mem_pool_t child_pool = {0};
+
+        // Add data before parenting
+        mem_pool_push_size_cb(&child_pool, 100, test_callback);
+
+        mem_pool_add_child(&parent_pool, &child_pool);
+
+        // Add data after parenting
+        mem_pool_push_size_cb(&child_pool, 100, test_callback);
+
+        // Verify child pool is functional
+        int *data1 = mem_pool_push_struct(&child_pool, int);
+        *data1 = 42;
+        bool success = (*data1 == 42);
+
+        // No callbacks have been called yet
+        success = success && (g_callbacks_executed == 0);
+
+        // Destroy parent pool - child pool callbacks should have been executed
+        mem_pool_destroy(&parent_pool);
+        success = success && (g_callbacks_executed == 2);
+
+        if (!success) {
+            str_cat_printf (t->error, "Child pool management failed\n");
+            str_cat_printf (t->error, "Callbacks executed: %d (expected 2)\n", g_callbacks_executed);
+            str_cat_printf (t->error, "Data values: data1=%d\n", *data1);
+        }
+
+        test_pop (t, success);
+    }
+
+    {
+        test_push (t, "Nested child pools");
+        mem_pool_t root_pool = {0};
+        g_callbacks_executed = 0;
+
+        // Create a hierarchy: root -> level1 -> level2
+        mem_pool_t level1_pool = {0};
+        mem_pool_t level2_pool = {0};
+        mem_pool_add_child(&level1_pool, &level2_pool);
+        mem_pool_add_child(&root_pool, &level1_pool);
+
+        mem_pool_push_size_cb(&level1_pool, 100, test_callback);
+        mem_pool_push_size_cb(&level2_pool, 200, test_callback);
+        mem_pool_push_size_cb(&root_pool, 300, test_callback);
+
+        // Verify functionality at each level
+        int *root_data = mem_pool_push_struct(&root_pool, int);
+        int *level1_data = mem_pool_push_struct(&level1_pool, int);
+        int *level2_data = mem_pool_push_struct(&level2_pool, int);
+
+        *root_data = 1;
+        *level1_data = 2;
+        *level2_data = 3;
+
+        bool success = (*root_data == 1 && *level1_data == 2 && *level2_data == 3);
+
+        // Verify no callbacks called yet
+        success = success && (g_callbacks_executed == 0);
+
+        // Destroy root - should cascade destroy level1, which cascades to level2
+        mem_pool_destroy(&root_pool);
+
+        // All callbacks should be executed (3 total)
+        // Destruction order should be: level2 -> level1 -> root (reverse of creation)
+        success = success && (g_callbacks_executed == 3);
+
+        if (!success) {
+            str_cat_printf (t->error, "Nested child pools failed\n");
+            str_cat_printf (t->error, "Callbacks executed: %d (expected 3)\n", g_callbacks_executed);
+        }
 
         test_pop (t, success);
     }
