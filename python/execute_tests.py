@@ -1,6 +1,8 @@
 from geometry import *
 
 def geometry_tests ():
+    test_push('Geometry')
+
     p1 = Point(0, 0)
     p2 = Point(8, 0)
 
@@ -15,10 +17,6 @@ def geometry_tests ():
 
     d1 = Segment(p1, p4)
     d2 = Segment(p2, p3)
-
-
-    print (f's1 = {s1}')
-    print (f's2 = {s2}')
 
     points_collinear_test (p1, p1, p1, True)
     points_collinear_test (p1, p1, Point(5,0), True)
@@ -64,6 +62,8 @@ def geometry_tests ():
     points_sort_test ([p1, p2, p3, p4], o, [p2, p1, p3, p4], reverse=True)
     points_sort_test ([p1, Point(8, 4), p2, p4], o, [Point(8, 4), p4, p1, p2])
     points_sort_test ([p1, Point(8, 4), p2, p4], o, [p2, p1, p4, Point(8, 4)], reverse=True)
+
+    test_pop()
 
 if __name__ == "__main__":
     geometry_tests()
