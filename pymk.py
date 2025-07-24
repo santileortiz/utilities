@@ -2,6 +2,9 @@
 from mkpy.utility import *
 import scripts
 import re
+import sys
+sys.path.append('python')
+from translation import set_default_language
 
 assert sys.version_info >= (3,2)
 
@@ -106,6 +109,27 @@ def expand_macro ():
 
         clean_line = re.sub(r'\s*##\s*', '', clean_line)
         print (clean_line)
+
+def translate_set_default():
+    """
+    Sets the default language files in a directory from translated versions.
+    Usage: ./pymk.py translate_set_default <directory> <language_code>
+    """
+    args = get_cli_no_opt()
+    if not args or len(args) != 2:
+        print('Usage:')
+        print('./pymk.py translate_set_default <directory> <language_code>')
+        print('Example: ./pymk.py translate_set_default ./translations en')
+        return
+
+    directory = args[0]
+    language_code = args[1]
+
+    try:
+        set_default_language(directory, language_code)
+        print(f'Set default language to "{language_code}" for files in "{directory}"')
+    except ValueError as e:
+        print(f'Error: {e}')
 
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.

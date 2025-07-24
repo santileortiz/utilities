@@ -1,4 +1,5 @@
 from geometry import *
+from translation import *
 
 def geometry_tests ():
     test_push('Geometry')
@@ -65,5 +66,35 @@ def geometry_tests ():
 
     test_pop()
 
+def translation_tests():
+    test_push('Translation')
+
+    import tempfile
+    import os
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        (temp_path / "config.en.xml").write_text("English config")
+        (temp_path / "config.es.xml").write_text("Spanish config")
+        (temp_path / "readme.en.txt").write_text("English readme")
+        (temp_path / "readme.es.txt").write_text("Spanish readme")
+
+        get_available_languages_test(temp_dir, {'en', 'es'})
+
+        set_default_language(temp_dir, 'en')
+
+        test((temp_path / "config.xml").read_text(), "English config")
+        test((temp_path / "readme.txt").read_text(), "English readme")
+
+        set_default_language(temp_dir, 'es')
+
+        test((temp_path / "config.xml").read_text(), "Spanish config")
+        test((temp_path / "readme.txt").read_text(), "Spanish readme")
+
+    test_pop()
+
 if __name__ == "__main__":
     geometry_tests()
+    translation_tests()
