@@ -70,7 +70,6 @@ def translation_tests():
     test_push('Translation')
 
     import tempfile
-    import os
     from pathlib import Path
 
     with tempfile.TemporaryDirectory() as temp_dir:
